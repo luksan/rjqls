@@ -1,6 +1,10 @@
+use std::iter;
+
 use anyhow::{bail, Context, Result};
 pub use serde_json::Value;
 use serde_json::{to_value, Number};
+
+use crate::ast_eval::{ExprResult, ExprValue};
 
 pub trait ValueOps {
     fn add(&self, other: &Self) -> Result<Value>;
@@ -13,6 +17,8 @@ pub trait ValueOps {
     fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Value> + '_>>;
 
     fn length(&self) -> Result<Value>;
+
+    fn to_expr_result(self) -> ExprResult;
 }
 
 impl ValueOps for Value {
@@ -100,6 +106,10 @@ impl ValueOps for Value {
             Value::Object(o) => o.len(),
         };
         Ok(Value::Number(Number::from(len)))
+    }
+
+    fn to_expr_result(self) -> ExprResult {
+        Ok(ExprValue::from_iter(iter::once(self)))
     }
 }
 
