@@ -17,8 +17,8 @@ pub fn eval(input: &str, filter: &str) -> Result<Vec<Value>> {
 }
 
 pub fn eval_parsed(input: Value, filter: &Expr) -> Result<Vec<Value>> {
-    let mut evaluator = ExprEval::new(input);
-    let vals = filter.accept(&mut evaluator)?;
+    let evaluator = ExprEval::new(input);
+    let vals = filter.accept(&evaluator)?;
     Ok(Vec::from_iter(vals))
 }
 
@@ -99,17 +99,15 @@ impl ExprEval {
                     expr_val_from_value(sum)
                 }),
             }),
-            ("length", 0) => {
-                return Ok(JqFunc {
-                    fun: Box::new(|val: &Value| expr_val_from_value(val.length()?)),
-                })
-            }
+            ("length", 0) => Ok(JqFunc {
+                fun: Box::new(|val: &Value| expr_val_from_value(val.length()?)),
+            }),
             ("select", 1) => {
                 let arg = args[0];
-                return Ok(JqFunc {
+                Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
-                        let mut eval = ExprEval::new(val.clone());
-                        let vals = arg.accept(&mut eval)?;
+                        let eval = ExprEval::new(val.clone());
+                        let vals = arg.accept(&eval)?;
                         let mut ret = SmallVec::new();
                         for bool in vals.iter().map(|v| v.is_truthy()) {
                             if bool {
@@ -118,7 +116,7 @@ impl ExprEval {
                         }
                         Ok(ret)
                     }),
-                });
+                })
             }
             ("map", 1) => {
                 let filter = args[0];
@@ -128,7 +126,7 @@ impl ExprEval {
                         let mut eval = ExprEval::new(Value::Null);
                         for v in val.iterate()? {
                             eval.input = v.clone();
-                            let vals = filter.accept(&mut eval)?;
+                            let vals = filter.accept(&eval)?;
                             ret.extend(vals.into_iter());
                         }
                         expr_val_from_value(Value::Array(ret))
@@ -218,7 +216,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
     }
 
     fn visit_dot(&self) -> ExprResult {
-        return expr_val_from_value(self.input.clone());
+        self.input.clone().to_expr_result()
     }
 
     fn visit_ident(&self, ident: &str) -> ExprResult {
@@ -259,7 +257,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         for member in members {
             assert!(matches!(member, Expr::ObjectEntry { .. }));
             let keyvals = member.accept(self)?;
-            let key: &str = &keyvals[0].as_str().context("Object jey must be a string")?;
+            let key: &str = keyvals[0].as_str().context("Object key must be a string")?;
             let mut values = keyvals[1..].iter();
 
             let obj_cnt = objects.len();
@@ -295,7 +293,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         let mut rhs_eval = self.clone();
         for value in lhs {
             rhs_eval.input = value;
-            ret.append(&mut rhs.accept(&mut rhs_eval)?);
+            ret.append(&mut rhs.accept(&rhs_eval)?);
         }
         Ok(ret)
     }

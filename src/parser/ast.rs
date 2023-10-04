@@ -146,6 +146,8 @@ impl ExprPrinter {
         self.r.borrow_mut().push_str(s);
     }
 }
+
+#[allow(clippy::unused_unit)]
 impl ExprVisitor<()> for ExprPrinter {
     fn default(&self) -> () {
         todo!()

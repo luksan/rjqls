@@ -75,11 +75,11 @@ impl ValueOps for Value {
             let idx = index
                 .as_str()
                 .with_context(|| format!("Can't index object with {index}."))?;
-            return Ok(o.get(idx).map(|v| v.clone()).unwrap_or(Value::Null));
+            return Ok(o.get(idx).cloned().unwrap_or(Value::Null));
         }
         let idx = index.as_u64().context("Index is not a number")? as usize;
         if let Value::Array(v) = self {
-            return Ok(v.get(idx).map(|v| v.clone()).unwrap_or(Value::Null));
+            return Ok(v.get(idx).cloned().unwrap_or(Value::Null));
         }
 
         unimplemented!()
