@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use bpaf::{Bpaf, Parser};
 use serde_json::Value;
 
-use rjqls::ast_eval::eval_parsed;
+use rjqls::interpreter::ast_eval::eval_parsed;
 use rjqls::parser::ast::Expr;
 use rjqls::parser::parse_filter;
 

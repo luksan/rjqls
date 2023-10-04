@@ -2,8 +2,9 @@ use anyhow::{bail, Context, Result};
 use serde_json::Map;
 use smallvec::SmallVec;
 
-use crate::parser::ast::{Ast, BinOps, Expr, ExprVisitor, Value, ValueOps};
+use crate::parser::ast::{Ast, BinOps, Expr, ExprVisitor, Value};
 use crate::parser::parse_filter;
+use crate::value::ValueOps;
 
 pub fn eval(input: &str, filter: &str) -> Result<Vec<Value>> {
     let ast = parse_filter(filter)?;
