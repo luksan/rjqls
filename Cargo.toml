@@ -1,0 +1,12 @@
+[package]
+name = "rjqls"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.71"
+bpaf = { version = "0.9.5", features = ["color", "derive"] }
+pest = "2.7.0"
+pest_derive = "2.7.0"
+serde_json = { version = "1.0.99", features = ["arbitrary_precision", "preserve_order"] }
+smallvec = { version = "1.11.0", features = ["const_generics", "serde"] }

@@ -1,0 +1,106 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
+
+plusminus = _{"+" | "-" }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT*)? ~ ( ("e"|"E") ~ plusminus? ~ ASCII_DIGIT+)? }
+bool = { "true" | "false" }
+
+literal = { number | bool | string | null }
+
+value = _{ obj2 | array | string | number | boolean | null }
+
+boolean = { "true" | "false" }
+
+null = { "null" }
+
+obj2 = {
+    "{" ~ "}" |
+    "{" ~ pair2 ~ ("," ~ pair2)* ~ "}"
+}
+pair2 = { ( ident | string | ("(" ~ join_filters ~ ")") ) ~ ":" ~ ( join_filters ) }
+
+array = {
+    "[" ~ "]" |
+    "[" ~ value ~ ("," ~ value)* ~ "]"
+}
+
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+ident = ${ ASCII_ALPHA ~ ( ASCII_ALPHANUMERIC | "_" )* }
+obj_ident = {"." ~ ( ident | string | "[" ~ string ~ "]") }
+array_constr = { "[" ~ join_filters? ~ "]" }
+
+builtin = {"add" | "map" | "length" | "select" }
+bin_op = {"+" | "-" | "/" | "*" | "==" | "!=" }
+
+operand = { member_select | builtin | literal }
+
+member_select = { obj_ident+ ~ array? }
+filter = {
+    ( operand ~ bin_op ~ operand ) |
+    member_select |
+    builtin ~ ("(" ~ join_filters ~ ")")?   |
+    array_constr |
+    obj |
+    literal |
+    "." |
+    ( "(" ~ join_filters ~ ")" )
+
+
+    ~ ("[" ~ "]")? }
+
+join_filters = { filter ~ ( ("|" | "," ) ~ filter )* }
+
+program = _{ SOI ~ join_filters ~ EOI }
+
+
+obj = {
+    "{" ~ "}" |
+    "{" ~ obj_pair ~ (comma ~ obj_pair)* ~ "}"
+}
+
+obj_pair = { obj_key ~ colon ~ obj_val }
+obj_key = { ident | string | ("(" ~ pratt_expr ~ ")") }
+obj_val = { primary ~ postfix * | "(" ~ pratt_expr ~ ")" }
+arr = {"[" ~ pratt_expr ~ "]"}
+colon = { ":" }
+
+pratt_prog = { SOI ~ pratt_expr ~ EOI }
+pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
+  infix = _{ eq | neq | add | sub| mul | div | comma | pipe | dot_infix }
+    eq = { "==" }
+    neq = { "!=" }
+    add = { "+" }
+    sub = { "-" }
+    mul = { "*" }
+    div = { "/" }
+    comma = { "," }
+    pipe = { "|" }
+    dot_infix = { &"." } // don't consume the dot, parse is as a primary, it will become a pipe in the ast
+  prefix = _{ "###" }
+  postfix = _{ iterate | arr_idx | ident_idx | string_idx }
+    iterate = { "[" ~ "]" }
+    arr_idx = {"["  ~ pratt_expr ~"]"}
+    ident_idx = { ident }
+    string_idx = { string }
+  primary = _{
+    obj |
+    dot_primary |
+    call |
+    literal |
+    ident_primary |
+    arr |
+    ( "(" ~ pratt_expr ~ ")")
+  }
+    dot_primary = { "." }
+    call = { ident ~ "(" ~ pratt_expr ~ ")" }
+    ident_primary = { ident }
+
+
+
