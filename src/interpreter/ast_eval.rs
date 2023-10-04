@@ -34,7 +34,7 @@ pub struct ExprEval {
 }
 
 impl ExprEval {
-    fn get_function<'expr>(&mut self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>> {
+    fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>> {
         match (name, args.len()) {
             ("add", 0) => Ok(JqFunc {
                 fun: Box::new(|val: &Value| {
@@ -94,11 +94,11 @@ fn expr_val_from_value(val: Value) -> ExprResult {
     Ok(SmallVec::from_elem(val, 1))
 }
 impl ExprVisitor<ExprResult> for ExprEval {
-    fn default(&mut self) -> ExprResult {
+    fn default(&self) -> ExprResult {
         panic!();
     }
 
-    fn visit_array(&mut self, elements: &[Expr]) -> ExprResult {
+    fn visit_array(&self, elements: &[Expr]) -> ExprResult {
         let mut ret = Vec::with_capacity(elements.len());
         for e in elements {
             let v = e.accept(self)?;
@@ -107,7 +107,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         expr_val_from_value(Value::Array(ret))
     }
 
-    fn visit_binop(&mut self, op: BinOps, lhs: &Ast, rhs: &Ast) -> ExprResult {
+    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> ExprResult {
         let lhs = lhs.accept(self)?;
         let rhs = rhs.accept(self)?;
         let mut ret = SmallVec::with_capacity(lhs.len() + rhs.len());
@@ -127,7 +127,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         Ok(ret)
     }
 
-    fn visit_call(&mut self, name: &Expr, args: Option<&Expr>) -> ExprResult {
+    fn visit_call(&self, name: &Expr, args: Option<&Expr>) -> ExprResult {
         let name = name.accept(self)?;
         assert_eq!(name.len(), 1);
         let mut arg_vec: SmallVec<[_; 1]> = SmallVec::with_capacity(1);
@@ -139,41 +139,22 @@ impl ExprVisitor<ExprResult> for ExprEval {
             .call(&self.input)
     }
 
-    fn visit_comma(&mut self, lhs: &Expr, rhs: &Expr) -> ExprResult {
+    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> ExprResult {
         let mut lhs = lhs.accept(self)?;
         let mut rhs = rhs.accept(self)?;
         lhs.append(&mut rhs);
         Ok(lhs)
     }
 
-    fn visit_dot(&mut self) -> ExprResult {
+    fn visit_dot(&self) -> ExprResult {
         return expr_val_from_value(self.input.clone());
-        /*
-        let rhs = rhs?;
-        let mut ret = SmallVec::with_capacity(rhs.len());
-        for idx in rhs {
-            match idx {
-                Value::Number(_) => {
-                    let idx = idx.as_f64().unwrap().trunc() as usize;
-                    ret.push(self.input.get(idx).map_or(Value::Null, |v| v.clone()));
-                }
-                Value::String(key) => {
-                    if !self.input.is_object() {
-                        bail!("'{}' is not an object, key is '{key}'", self.input)
-                    }
-                    ret.push(self.input.get(key).map_or(Value::Null, |v| v.clone()));
-                }
-                _ => bail!("Index operator must be a string or a number."),
-            }
-        }
-        Ok(ret)*/
     }
 
-    fn visit_ident(&mut self, ident: &str) -> ExprResult {
+    fn visit_ident(&self, ident: &str) -> ExprResult {
         expr_val_from_value(Value::String(ident.to_string()))
     }
     // array or object index
-    fn visit_index(&mut self, expr: &Expr, idx: Option<&Expr>) -> ExprResult {
+    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> ExprResult {
         let e = expr
             .accept(self)
             .with_context(|| format!("Eval of expr for indexing failed {expr:?}"))?;
@@ -198,11 +179,11 @@ impl ExprVisitor<ExprResult> for ExprEval {
         Ok(ret)
     }
 
-    fn visit_literal(&mut self, lit: &Value) -> ExprResult {
+    fn visit_literal(&self, lit: &Value) -> ExprResult {
         expr_val_from_value(lit.clone())
     }
 
-    fn visit_object(&mut self, members: &[Expr]) -> ExprResult {
+    fn visit_object(&self, members: &[Expr]) -> ExprResult {
         let mut objects: Vec<Map<String, Value>> = vec![Map::default()];
         for member in members {
             assert!(matches!(member, Expr::ObjectEntry { .. }));
@@ -228,7 +209,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         Ok(objects.into_iter().map(Value::Object).collect())
     }
 
-    fn visit_obj_entry(&mut self, key: &Expr, value: &Expr) -> ExprResult {
+    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> ExprResult {
         let key = key.accept(self)?;
         let mut val = value.accept(self)?;
         assert_eq!(key.len(), 1);
@@ -237,7 +218,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         Ok(ret)
     }
 
-    fn visit_pipe(&mut self, lhs: &Expr, rhs: &Expr) -> ExprResult {
+    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> ExprResult {
         let lhs = lhs.accept(self)?;
         let mut ret = SmallVec::with_capacity(lhs.len());
         let mut rhs_eval = self.clone();

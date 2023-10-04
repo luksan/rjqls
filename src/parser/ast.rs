@@ -29,7 +29,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn accept<R>(&self, visitor: &mut (impl ExprVisitor<R> + ?Sized)) -> R {
+    pub fn accept<R>(&self, visitor: &(impl ExprVisitor<R> + ?Sized)) -> R {
         match self {
             Expr::Array(r) => visitor.visit_array(r),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
@@ -49,59 +49,59 @@ impl Expr {
 
 #[allow(unused_variables)]
 pub trait ExprVisitor<R> {
-    fn default(&mut self) -> R;
+    fn default(&self) -> R;
 
-    fn visit_array(&mut self, elements: &[Expr]) -> R {
+    fn visit_array(&self, elements: &[Expr]) -> R {
         for e in elements {
             e.accept(self);
         }
         self.default()
     }
 
-    fn visit_binop(&mut self, op: BinOps, lhs: &Ast, rhs: &Ast) -> R {
+    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_call(&mut self, name: &Expr, args: Option<&Expr>) -> R {
+    fn visit_call(&self, name: &Expr, args: Option<&Expr>) -> R {
         name.accept(self);
         args.map(|a| a.accept(self));
         self.default()
     }
-    fn visit_comma(&mut self, lhs: &Expr, rhs: &Expr) -> R {
+    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_dot(&mut self) -> R {
+    fn visit_dot(&self) -> R {
         self.default()
     }
-    fn visit_ident(&mut self, ident: &str) -> R {
+    fn visit_ident(&self, ident: &str) -> R {
         self.default()
     }
-    fn visit_index(&mut self, expr: &Expr, idx: Option<&Expr>) -> R {
+    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> R {
         expr.accept(self);
         idx.map(|idx| idx.accept(self));
         self.default()
     }
-    fn visit_literal(&mut self, lit: &Value) -> R {
+    fn visit_literal(&self, lit: &Value) -> R {
         self.default()
     }
-    fn visit_object(&mut self, members: &[Expr]) -> R {
+    fn visit_object(&self, members: &[Expr]) -> R {
         for e in members {
             e.accept(self);
         }
         self.default()
     }
-    fn visit_obj_entry(&mut self, key: &Expr, value: &Expr) -> R {
+    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> R {
         key.accept(self);
         value.accept(self);
         self.default()
     }
-    fn visit_obj_member(&mut self, key: &str) -> R {
+    fn visit_obj_member(&self, key: &str) -> R {
         self.default()
     }
-    fn visit_pipe(&mut self, lhs: &Expr, rhs: &Expr) -> R {
+    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
