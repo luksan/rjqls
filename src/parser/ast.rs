@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 pub use serde_json::Value;
 
 #[derive(Debug, Copy, Clone)]
@@ -15,6 +17,7 @@ pub type Ast = Box<Expr>;
 #[derive(Debug)]
 pub enum Expr {
     Array(Vec<Expr>),
+    BindVars(Ast, Ast),
     BinOp(BinOps, Ast, Ast),
     Call(Ast, Option<Ast>),
     Comma(Ast, Ast),
@@ -26,12 +29,14 @@ pub enum Expr {
     ObjectEntry { key: Ast, value: Ast },
     ObjMember(String), // select object member
     Pipe(Ast, Ast),
+    Variable(String),
 }
 
 impl Expr {
     pub fn accept<R>(&self, visitor: &(impl ExprVisitor<R> + ?Sized)) -> R {
         match self {
             Expr::Array(r) => visitor.visit_array(r),
+            Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_ref().map(|ast| &**ast)),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
@@ -43,6 +48,7 @@ impl Expr {
             Expr::ObjectEntry { key, value } => visitor.visit_obj_entry(key, value),
             Expr::ObjMember(k) => visitor.visit_obj_member(k),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
+            Expr::Variable(s) => visitor.visit_variable(s),
         }
     }
 }
@@ -55,6 +61,12 @@ pub trait ExprVisitor<R> {
         for e in elements {
             e.accept(self);
         }
+        self.default()
+    }
+
+    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> R {
+        vals.accept(self);
+        vars.accept(self);
         self.default()
     }
 
@@ -105,5 +117,132 @@ pub trait ExprVisitor<R> {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
+    }
+    fn visit_variable(&self, name: &str) -> R {
+        self.default()
+    }
+}
+
+pub struct ExprPrinter {
+    r: RefCell<String>,
+}
+impl ExprPrinter {
+    fn new() -> Self {
+        Self {
+            r: Default::default(),
+        }
+    }
+    pub fn print(expr: &Expr) {
+        let this = Self::new();
+        expr.accept(&this);
+        println!("{}", this.r.borrow())
+    }
+
+    fn putc(&self, c: char) {
+        self.r.borrow_mut().push(c);
+    }
+
+    fn puts(&self, s: &str) {
+        self.r.borrow_mut().push_str(s);
+    }
+}
+impl ExprVisitor<()> for ExprPrinter {
+    fn default(&self) -> () {
+        todo!()
+    }
+
+    fn visit_array(&self, elements: &[Expr]) -> () {
+        self.putc('[');
+        let mut it = elements.iter();
+        if let Some(first) = it.next() {
+            first.accept(self);
+            for e in it {
+                self.putc(',');
+                e.accept(self);
+            }
+        }
+        self.putc(']')
+    }
+
+    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> () {
+        vals.accept(self);
+        self.puts("as");
+        vars.accept(self);
+    }
+
+    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> () {
+        lhs.accept(self);
+        self.puts(&format!("{op:?}"));
+        rhs.accept(self);
+    }
+
+    fn visit_call(&self, name: &Expr, args: Option<&Expr>) -> () {
+        name.accept(self);
+        if let Some(args) = args {
+            self.putc('(');
+            args.accept(self);
+            self.putc(')');
+        }
+    }
+
+    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> () {
+        lhs.accept(self);
+        self.putc(',');
+        rhs.accept(self);
+    }
+
+    fn visit_dot(&self) -> () {
+        self.putc('.')
+    }
+
+    fn visit_ident(&self, ident: &str) -> () {
+        self.puts(ident)
+    }
+
+    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> () {
+        expr.accept(self);
+        if let Some(idx) = idx {
+            idx.accept(self)
+        } else {
+            self.puts("[]")
+        }
+    }
+
+    fn visit_literal(&self, lit: &Value) -> () {
+        self.puts(&lit.to_string())
+    }
+
+    fn visit_object(&self, members: &[Expr]) -> () {
+        self.putc('{');
+        let mut it = members.iter();
+        if let Some(first) = it.next() {
+            first.accept(self);
+            for e in it {
+                self.putc(',');
+                e.accept(self);
+            }
+        }
+        self.putc('}');
+    }
+
+    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> () {
+        key.accept(self);
+        self.puts(": ");
+        value.accept(self);
+    }
+
+    fn visit_obj_member(&self, key: &str) -> () {
+        self.puts(key)
+    }
+
+    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> () {
+        lhs.accept(self);
+        self.putc('|');
+        rhs.accept(self);
+    }
+
+    fn visit_variable(&self, name: &str) -> () {
+        self.putc('$');
+        self.puts(name);
     }
 }

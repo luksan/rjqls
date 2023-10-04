@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+use std::sync::RwLock;
+
 use anyhow::{bail, Context, Result};
 use serde_json::Map;
 use smallvec::SmallVec;
 
+use crate::interpreter::bind_var_pattern::BindVars;
 use crate::parser::ast::{Ast, BinOps, Expr, ExprVisitor, Value};
 use crate::parser::parse_filter;
 use crate::value::ValueOps;
@@ -13,7 +17,7 @@ pub fn eval(input: &str, filter: &str) -> Result<Vec<Value>> {
 }
 
 pub fn eval_parsed(input: Value, filter: &Expr) -> Result<Vec<Value>> {
-    let mut evaluator = ExprEval { input };
+    let mut evaluator = ExprEval::new(input);
     let vals = filter.accept(&mut evaluator)?;
     Ok(Vec::from_iter(vals))
 }
@@ -28,12 +32,62 @@ impl JqFunc<'_> {
     }
 }
 
+#[derive(Debug)]
+pub struct VarScope<'p> {
+    entries: RwLock<HashMap<String, ExprValue>>,
+    parent: Option<&'p Self>,
+}
+
+impl Clone for VarScope<'_> {
+    fn clone(&self) -> Self {
+        let entries = self.entries.read().unwrap().clone();
+        Self {
+            entries: RwLock::new(entries),
+            parent: self.parent,
+        }
+    }
+}
+
+impl<'p> VarScope<'p> {
+    fn new(parent: Option<&'p Self>) -> Self {
+        Self {
+            entries: Default::default(),
+            parent,
+        }
+    }
+    fn get_parent(&self) -> Option<&'p Self> {
+        self.parent
+    }
+
+    fn get_variable(&self, name: &str) -> ExprResult {
+        let entries = self.entries.read().unwrap();
+        if let Some(val) = entries.get(name) {
+            return Ok(val.clone());
+        }
+        match self.get_parent() {
+            None => bail!("Variable ${name} is not defined."),
+            Some(p) => p.get_variable(name),
+        }
+    }
+    pub(crate) fn set_variable(&self, name: &str, value: ExprValue) {
+        let mut entries = self.entries.write().unwrap();
+        entries.insert(name.to_owned(), value);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExprEval {
     input: Value,
+    variables: VarScope<'static>,
 }
 
 impl ExprEval {
+    pub fn new(input: Value) -> Self {
+        Self {
+            input,
+            variables: VarScope::new(None),
+        }
+    }
     fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>> {
         match (name, args.len()) {
             ("add", 0) => Ok(JqFunc {
@@ -54,7 +108,7 @@ impl ExprEval {
                 let arg = args[0];
                 return Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
-                        let mut eval = ExprEval { input: val.clone() };
+                        let mut eval = ExprEval::new(val.clone());
                         let vals = arg.accept(&mut eval)?;
                         let mut ret = SmallVec::new();
                         for bool in vals.iter().map(|v| v.is_truthy()) {
@@ -71,7 +125,7 @@ impl ExprEval {
                 Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
                         let mut ret = Vec::new();
-                        let mut eval = ExprEval { input: Value::Null };
+                        let mut eval = ExprEval::new(Value::Null);
                         for v in val.iterate()? {
                             eval.input = v.clone();
                             let vals = filter.accept(&mut eval)?;
@@ -84,6 +138,14 @@ impl ExprEval {
 
             (_, len) => bail!("Function {name}/{len} not found."),
         }
+    }
+
+    fn current_scope(&self) -> &VarScope {
+        &self.variables
+    }
+
+    fn get_variable(&self, name: &str) -> ExprResult {
+        self.variables.get_variable(name)
     }
 }
 
@@ -105,6 +167,15 @@ impl ExprVisitor<ExprResult> for ExprEval {
             ret.extend(v.into_iter());
         }
         expr_val_from_value(Value::Array(ret))
+    }
+
+    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> ExprResult {
+        let vals = vals.accept(self)?;
+        for v in vals {
+            // TODO this should bifurcate the execution
+            BindVars::bind(&v, vars, self.current_scope())?;
+        }
+        self.input.clone().to_expr_result()
     }
 
     fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> ExprResult {
@@ -228,6 +299,10 @@ impl ExprVisitor<ExprResult> for ExprEval {
         }
         Ok(ret)
     }
+
+    fn visit_variable(&self, name: &str) -> ExprResult {
+        self.get_variable(name)
+    }
 }
 
 #[cfg(test)]
@@ -238,9 +313,7 @@ mod test {
 
     #[test]
     fn test_expr_eval() {
-        let mut eval = ExprEval {
-            input: to_value([1, 2, 3]).unwrap(),
-        };
+        let mut eval = ExprEval::new(to_value([1, 2, 3]).unwrap());
         let ast = parse_filter("1,.,3/4").unwrap();
         let vals = ast.accept(&mut eval).unwrap();
         for _v in vals {

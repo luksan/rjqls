@@ -32,7 +32,8 @@ char = {
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
-ident = ${ ASCII_ALPHA ~ ( ASCII_ALPHANUMERIC | "_" )* }
+ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  ASCII_ALPHA ~ ( ASCII_ALPHANUMERIC | "_" )* }
+
 obj_ident = {"." ~ ( ident | string | "[" ~ string ~ "]") }
 array_constr = { "[" ~ join_filters? ~ "]" }
 
@@ -66,14 +67,19 @@ obj = {
 }
 
 obj_pair = { obj_key ~ colon ~ obj_val }
-obj_key = { ident | string | ("(" ~ pratt_expr ~ ")") }
+obj_key = { ident | string | variable | ("(" ~ pratt_expr ~ ")") }
 obj_val = { primary ~ postfix * | "(" ~ pratt_expr ~ ")" }
 arr = {"[" ~ pratt_expr ~ "]"}
 colon = { ":" }
 
+variable = ${ "$" ~ ident }
+keywords = { as_ }
+// the binding is only used to reject invalid bindings, not to actually capture
+variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{" ~ (ident | string) ~ ":" ~ variable_binding ~ "}") }
+
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
-  infix = _{ eq | neq | add | sub| mul | div | comma | pipe | dot_infix }
+  infix = _{ eq | neq | add | sub| mul | div | comma | pipe | dot_infix | as_ }
     eq = { "==" }
     neq = { "!=" }
     add = { "+" }
@@ -82,7 +88,8 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     div = { "/" }
     comma = { "," }
     pipe = { "|" }
-    dot_infix = { &"." } // don't consume the dot, parse is as a primary, it will become a pipe in the ast
+    dot_infix = { &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
+    as_ = { "as" }
   prefix = _{ "###" }
   postfix = _{ iterate | arr_idx | ident_idx | string_idx }
     iterate = { "[" ~ "]" }
@@ -95,12 +102,13 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     call |
     literal |
     ident_primary |
+    var_primary |
     arr |
     ( "(" ~ pratt_expr ~ ")")
   }
     dot_primary = { "." }
     call = { ident ~ "(" ~ pratt_expr ~ ")" }
     ident_primary = { ident }
-
+    var_primary = { variable }
 
 

@@ -34,6 +34,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
             Op::infix(Rule::pipe, Assoc::Left) | // pipe and comma have the same precedence
             Op::infix(Rule::comma, Assoc::Left),
         )
+        .op(Op::infix(Rule::as_, Assoc::Left))
         .op(Op::infix(Rule::eq, Assoc::Left) | // fmt
             Op::infix(Rule::neq, Assoc::Left))
         .op(Op::infix(Rule::dot_infix, Assoc::Left))
@@ -108,17 +109,29 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
 
                     Expr::Call(Ast::new(ident), Some(params))
                 }
-                Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::dot_primary => Expr::Dot,
+                Rule::ident => Expr::Ident(p.as_str().to_string()),
                 Rule::ident_primary => {
                     let mut x = p.into_inner();
                     let ident = Expr::Ident(x.next().unwrap().as_str().to_string());
                     Expr::Call(Ast::new(ident), None)
                 }
-                Rule::ident => Expr::Ident(p.as_str().to_string()),
+                Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(vec_from_commas(pratt_parse_object(p.into_inner()))),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
                 Rule::string => Expr::Literal(Value::String(p.as_str().to_string())),
+                Rule::var_primary => {
+                    Expr::Variable(
+                        p.into_inner() // variable
+                            .next()
+                            .unwrap()
+                            .into_inner() // ident
+                            .next()
+                            .unwrap()
+                            .as_str()
+                            .to_owned(),
+                    )
+                }
                 r => panic!("primary {r:?}"),
             })
         })
@@ -128,6 +141,8 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::sub => Expr::BinOp(BinOps::Sub, lhs, rhs),
                 Rule::mul => Expr::BinOp(BinOps::Mul, lhs, rhs),
                 Rule::div => Expr::BinOp(BinOps::Div, lhs, rhs),
+
+                Rule::as_ => Expr::BindVars(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
                 Rule::dot_infix => Expr::Pipe(lhs, Ast::new(Expr::Dot)),
                 Rule::eq => Expr::BinOp(BinOps::Eq, lhs, rhs),
@@ -139,10 +154,13 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
             };
             Ast::new(expr)
         })
-        .map_prefix(|op, expr| {
+        .map_prefix(|_op, _expr| {
+            panic!("No prefix rules yet.");
+            /*
             Ast::new(match op.as_rule() {
                 r => panic!("Missing pratt prefix rule {r:?}"),
             })
+             */
         })
         .map_postfix(|expr, op| {
             Ast::new(match op.as_rule() {
@@ -201,6 +219,10 @@ mod test_parser {
             ".a[3]",
             ".[1,2,3]",
             ".a + .b",
+            "$a",
+            "3 as $a",
+            "as_",
+            "[1,2,4] as [$a,$b,$c] | $a",
         ];
         // let filters = [".a[]"];
         let mut filters: &mut dyn Iterator<Item = _> = &mut filters.iter().copied();
