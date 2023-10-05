@@ -57,8 +57,9 @@ fn parse_literal(pairs: Pair<Rule>) -> Value {
     }
 }
 
-fn pratt_parse_object(pairs: Pairs<Rule>) -> Ast {
+fn parse_object(pair: Pair<Rule>) -> Ast {
     let pratt = get_pratt_parser();
+    let pairs = pair.into_inner();
     pratt
         .map_primary(|p| match p.as_rule() {
             Rule::obj_pair => {
@@ -94,49 +95,49 @@ fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {
     ret
 }
 
+trait PairExt {
+    fn inner_string(self, level: usize) -> String;
+}
+impl PairExt for Pair<'_, Rule> {
+    fn inner_string(self, level: usize) -> String {
+        let mut p = self;
+        for _ in 0..level {
+            p = p.into_inner().next().unwrap();
+        }
+        p.as_str().to_owned()
+    }
+}
+
 pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
     let pratt = get_pratt_parser();
 
     fn parse_inner_expr(pair: Pair<Rule>) -> Ast {
-        let mut x = pair.into_inner();
+        let x = pair.into_inner();
         pratt_parser(x)
     }
 
     pratt
         .map_primary(|p| {
             Ast::new(match p.as_rule() {
-                Rule::arr => Expr::Array(vec_from_commas(pratt_parser(p.into_inner()))),
+                Rule::arr => Expr::Array(vec_from_commas(parse_inner_expr(p))),
                 Rule::call => {
                     let mut x = p.into_inner();
-                    let ident = Expr::Ident(x.next().unwrap().as_str().to_string());
-                    let params = pratt_parser(x.next().unwrap().into_inner());
-
+                    let ident = Expr::Ident(x.next().unwrap().inner_string(0));
+                    let params = parse_inner_expr(x.next().unwrap());
                     Expr::Call(Ast::new(ident), Some(params))
                 }
                 Rule::dot_primary => Expr::Dot,
-                Rule::ident => Expr::Ident(p.as_str().to_string()),
+                Rule::ident => Expr::Ident(p.inner_string(0)),
                 Rule::ident_primary => {
-                    let mut x = p.into_inner();
-                    let ident = Expr::Ident(x.next().unwrap().as_str().to_string());
+                    let ident = Expr::Ident(p.inner_string(1));
                     Expr::Call(Ast::new(ident), None)
                 }
                 Rule::literal => Expr::Literal(parse_literal(p)),
-                Rule::obj => Expr::Object(vec_from_commas(pratt_parse_object(p.into_inner()))),
+                Rule::obj => Expr::Object(vec_from_commas(parse_object(p))),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
                 Rule::primary_group => Expr::Scope(parse_inner_expr(p)),
-                Rule::string => Expr::Literal(Value::String(p.as_str().to_string())),
-                Rule::var_primary => {
-                    Expr::Variable(
-                        p.into_inner() // variable
-                            .next()
-                            .unwrap()
-                            .into_inner() // ident
-                            .next()
-                            .unwrap()
-                            .as_str()
-                            .to_owned(),
-                    )
-                }
+                Rule::string => Expr::Literal(Value::String(p.inner_string(0))),
+                Rule::var_primary => Expr::Variable(p.inner_string(2)),
                 r => panic!("primary {r:?}"),
             })
         })
@@ -168,19 +169,12 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
         })
         .map_postfix(|expr, op| {
             Ast::new(match op.as_rule() {
-                Rule::arr_idx => Expr::Index(expr, Some(pratt_parser(op.into_inner()))),
+                Rule::arr_idx => Expr::Index(expr, Some(parse_inner_expr(op))),
                 Rule::iterate => Expr::Index(expr, None),
-                Rule::ident_idx => Expr::Index(expr, Some(pratt_parser(op.into_inner()))),
+                Rule::ident_idx => Expr::Index(expr, Some(parse_inner_expr(op))),
                 Rule::string_idx => Expr::Index(
                     expr,
-                    Some(Ast::new(Expr::Literal(Value::String(
-                        op.into_inner()
-                            .next()
-                            .unwrap()
-                            .into_inner()
-                            .as_str()
-                            .to_owned(),
-                    )))),
+                    Some(Ast::new(Expr::Literal(Value::String(op.inner_string(2))))),
                 ),
                 r => panic!("Missing pratt postfix rule {r:?}"),
             })
