@@ -272,7 +272,7 @@ mod test_parser {
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
             [var_binding, "3 as $a", "BindVars(Literal(Number(3)), Variable(\"a\"))"]
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
-            [var_scope, "(3 as $a) | $a", r#"Pipe(Scope(BindVars(Literal(Number(3)), Variable("a"))), Variable("a"))"#]
+            [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
         ];
     }
 
