@@ -29,6 +29,7 @@ pub enum Expr {
     ObjectEntry { key: Ast, value: Ast },
     ObjMember(String), // select object member
     Pipe(Ast, Ast),
+    Scope(Ast),
     Variable(String),
 }
 
@@ -48,6 +49,7 @@ impl Expr {
             Expr::ObjectEntry { key, value } => visitor.visit_obj_entry(key, value),
             Expr::ObjMember(k) => visitor.visit_obj_member(k),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
+            Expr::Scope(s) => visitor.visit_scope(s),
             Expr::Variable(s) => visitor.visit_variable(s),
         }
     }
@@ -116,6 +118,10 @@ pub trait ExprVisitor<R> {
     fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> R {
         lhs.accept(self);
         rhs.accept(self);
+        self.default()
+    }
+    fn visit_scope(&self, inner: &Expr) -> R {
+        inner.accept(self);
         self.default()
     }
     fn visit_variable(&self, name: &str) -> R {
@@ -241,6 +247,12 @@ impl ExprVisitor<()> for ExprPrinter {
         lhs.accept(self);
         self.putc('|');
         rhs.accept(self);
+    }
+
+    fn visit_scope(&self, inner: &Expr) -> () {
+        self.putc('(');
+        inner.accept(self);
+        self.putc(')');
     }
 
     fn visit_variable(&self, name: &str) -> () {

@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::ops::Deref;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{bail, Context, Result};
 use serde_json::Map;
@@ -33,30 +35,28 @@ impl JqFunc<'_> {
 }
 
 #[derive(Debug)]
-pub struct VarScope<'p> {
+pub struct VarScope {
     entries: RwLock<HashMap<String, ExprValue>>,
-    parent: Option<&'p Self>,
+    parent: Option<Arc<Self>>,
 }
 
-impl Clone for VarScope<'_> {
-    fn clone(&self) -> Self {
-        let entries = self.entries.read().unwrap().clone();
-        Self {
-            entries: RwLock::new(entries),
-            parent: self.parent,
-        }
-    }
-}
-
-impl<'p> VarScope<'p> {
-    fn new(parent: Option<&'p Self>) -> Self {
+impl VarScope {
+    fn new() -> Arc<Self> {
         Self {
             entries: Default::default(),
-            parent,
+            parent: None,
         }
+        .into()
     }
-    fn get_parent(&self) -> Option<&'p Self> {
-        self.parent
+    fn begin_scope(self: &Arc<Self>) -> Arc<Self> {
+        Self {
+            entries: Default::default(),
+            parent: Some(self.clone()),
+        }
+        .into()
+    }
+    fn get_parent(&self) -> Option<&Arc<Self>> {
+        self.parent.as_ref()
     }
 
     fn get_variable(&self, name: &str) -> ExprResult {
@@ -78,14 +78,14 @@ impl<'p> VarScope<'p> {
 #[derive(Debug, Clone)]
 pub struct ExprEval {
     input: Value,
-    variables: VarScope<'static>,
+    variables: RefCell<Arc<VarScope>>,
 }
 
 impl ExprEval {
     pub fn new(input: Value) -> Self {
         Self {
             input,
-            variables: VarScope::new(None),
+            variables: VarScope::new().into(),
         }
     }
     fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>> {
@@ -138,12 +138,20 @@ impl ExprEval {
         }
     }
 
-    fn current_scope(&self) -> &VarScope {
-        &self.variables
+    fn get_variable(&self, name: &str) -> ExprResult {
+        self.variables.borrow().get_variable(name)
     }
 
-    fn get_variable(&self, name: &str) -> ExprResult {
-        self.variables.get_variable(name)
+    fn begin_scope(&self) {
+        let mut vars = self.variables.borrow_mut();
+        let inner = vars.begin_scope();
+        *vars = inner;
+    }
+
+    fn end_scope(&self) {
+        let mut vars = self.variables.borrow_mut();
+        let outer = vars.get_parent().unwrap().clone();
+        *vars = outer;
     }
 }
 
@@ -171,7 +179,7 @@ impl ExprVisitor<ExprResult> for ExprEval {
         let vals = vals.accept(self)?;
         for v in vals {
             // TODO this should bifurcate the execution
-            BindVars::bind(&v, vars, self.current_scope())?;
+            BindVars::bind(&v, vars, self.variables.borrow().deref())?;
         }
         self.input.clone().to_expr_result()
     }
@@ -301,6 +309,13 @@ impl ExprVisitor<ExprResult> for ExprEval {
     fn visit_variable(&self, name: &str) -> ExprResult {
         self.get_variable(name)
     }
+
+    fn visit_scope(&self, inner: &Expr) -> ExprResult {
+        self.begin_scope();
+        let r = inner.accept(self);
+        self.end_scope();
+        r
+    }
 }
 
 #[cfg(test)]
@@ -311,11 +326,24 @@ mod test {
 
     #[test]
     fn test_expr_eval() {
-        let mut eval = ExprEval::new(to_value([1, 2, 3]).unwrap());
-        let ast = parse_filter("1,.,3/4").unwrap();
-        let vals = ast.accept(&mut eval).unwrap();
-        for _v in vals {
+        let array = to_value([1, 2, 3]).unwrap();
+        let filter = ". as [$a, $b] | $a + $b";
+        let result = eval_expr(filter, array).unwrap();
+        for _v in result {
             // println!("{_v},")
         }
+    }
+
+    #[test]
+    fn test_scope_fail() {
+        let filter = "(3 as $a | $a) | $a";
+        let err = eval_expr(filter, Value::Null).unwrap_err();
+        assert_eq!(&err.to_string(), "Variable $a is not defined.")
+    }
+
+    fn eval_expr(filter: &str, input: Value) -> ExprResult {
+        let eval = ExprEval::new(input);
+        let ast = parse_filter(filter).unwrap();
+        ast.accept(&eval)
     }
 }

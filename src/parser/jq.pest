@@ -103,11 +103,12 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     ident_primary |
     var_primary |
     arr |
-    ( "(" ~ pratt_expr ~ ")")
+    primary_group
   }
     dot_primary = { "." }
     call = { ident ~ "(" ~ pratt_expr ~ ")" }
     ident_primary = { ident }
     var_primary = { variable }
+    primary_group = { "(" ~ pratt_expr ~ ")" }
 
 

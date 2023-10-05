@@ -97,6 +97,11 @@ fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {
 pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
     let pratt = get_pratt_parser();
 
+    fn parse_inner_expr(pair: Pair<Rule>) -> Ast {
+        let mut x = pair.into_inner();
+        pratt_parser(x)
+    }
+
     pratt
         .map_primary(|p| {
             Ast::new(match p.as_rule() {
@@ -118,6 +123,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(vec_from_commas(pratt_parse_object(p.into_inner()))),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
+                Rule::primary_group => Expr::Scope(parse_inner_expr(p)),
                 Rule::string => Expr::Literal(Value::String(p.as_str().to_string())),
                 Rule::var_primary => {
                     Expr::Variable(
@@ -272,6 +278,7 @@ mod test_parser {
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
             [var_binding, "3 as $a", "BindVars(Literal(Number(3)), Variable(\"a\"))"]
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
+            [var_scope, "(3 as $a) | $a", r#"Pipe(Scope(BindVars(Literal(Number(3)), Variable("a"))), Variable("a"))"#]
         ];
     }
 

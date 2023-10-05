@@ -8,8 +8,8 @@ use crate::interpreter::ast_eval::{ExprValue, VarScope};
 use crate::parser::ast::{Expr, ExprVisitor};
 use crate::value::ValueOps;
 
-pub struct BindVars<'v, 'r, 's> {
-    scope: &'r VarScope<'s>,
+pub struct BindVars<'v, 'r> {
+    scope: &'r VarScope,
     val_iter: RefCell<ValIter<'v>>,
     current_obj: RefCell<Option<&'v Map<String, Value>>>,
     curr_obj_val: RefCell<&'v Value>,
@@ -17,8 +17,8 @@ pub struct BindVars<'v, 'r, 's> {
 
 type ValIter<'v> = Box<dyn Iterator<Item = &'v Value> + 'v>;
 
-impl<'v, 'r, 's> BindVars<'v, 'r, 's> {
-    pub fn bind(values: &'v Value, pattern: &Expr, scope: &'r VarScope<'s>) -> Result<()> {
+impl<'v, 'r> BindVars<'v, 'r> {
+    pub fn bind(values: &'v Value, pattern: &Expr, scope: &'r VarScope) -> Result<()> {
         let this = Self {
             scope,
             val_iter: RefCell::new(Box::new(iter::once(values))),
@@ -59,7 +59,7 @@ impl<'v, 'r, 's> BindVars<'v, 'r, 's> {
 
 type VisitorRet = Result<()>;
 
-impl ExprVisitor<Result<()>> for BindVars<'_, '_, '_> {
+impl ExprVisitor<Result<()>> for BindVars<'_, '_> {
     fn default(&self) -> VisitorRet {
         bail!("Invalid variable binding pattern.");
     }
