@@ -75,11 +75,11 @@ colon = { ":" }
 variable = ${ "$" ~ ident }
 keywords = { as_ }
 // the binding is only used to reject invalid bindings, not to actually capture
-variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{" ~ (ident | string) ~ ":" ~ variable_binding ~ "}") }
+// variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{" ~ (ident | string) ~ ":" ~ variable_binding ~ "}") }
 
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
-  infix = _{ eq | neq | add | sub| mul | div | comma | pipe | dot_infix | as_ }
+  infix = _{ eq | neq | add | sub| mul | div | comma | pipe | as_ }
     eq = { "==" }
     neq = { "!=" }
     add = { "+" }
@@ -87,8 +87,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     mul = { "*" }
     div = { "/" }
     comma = { "," }
-    pipe = { "|" }
-    dot_infix = { &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
+    pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
     as_ = { "as" }
   prefix = _{ "###" }
   postfix = _{ iterate | arr_idx | ident_idx | string_idx }

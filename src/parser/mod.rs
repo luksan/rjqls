@@ -37,7 +37,6 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::infix(Rule::as_, Assoc::Left))
         .op(Op::infix(Rule::eq, Assoc::Left) | // fmt
             Op::infix(Rule::neq, Assoc::Left))
-        .op(Op::infix(Rule::dot_infix, Assoc::Left))
         .op(Op::infix(Rule::add, Assoc::Left) // fmt
             | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
@@ -144,7 +143,6 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
 
                 Rule::as_ => Expr::BindVars(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
-                Rule::dot_infix => Expr::Pipe(lhs, Ast::new(Expr::Dot)),
                 Rule::eq => Expr::BinOp(BinOps::Eq, lhs, rhs),
                 Rule::neq => Expr::BinOp(BinOps::NotEq, lhs, rhs),
                 Rule::pipe => Expr::Pipe(lhs, rhs),
@@ -185,6 +183,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod test_parser {
     use std::iter;
     use std::panic::{catch_unwind, resume_unwind};
@@ -193,19 +192,23 @@ mod test_parser {
 
     use super::*;
 
+    // #[test]
+    fn debugger() {
+        let filter = ".a.b";
+        let pairs = parse_pratt(filter).unwrap();
+        print_pairs(pairs, 0);
+        let _ast = parse_pratt_ast(filter).unwrap();
+        println!("'{filter}' -> {_ast:?}");
+
+        panic!("This testcase is only for debugging the parser.");
+    }
+
     #[test]
     fn test_pratt() {
         let filters = [
-            "123e3 + 2",
             r#""str""#,
-            ".obj1",
             ".obj1.obj2",
             r#"."key with space index""#,
-            "{ asd: 123 }",
-            r#"{ a: "b" }"#,
-            r#"{ "a": 0 }"#,
-            r#"{a: 4, b: 5, "c": 6}"#,
-            "length",
             ". | length",
             ".obj[]",
             "2 == 3",
@@ -219,10 +222,7 @@ mod test_parser {
             ".a[3]",
             ".[1,2,3]",
             ".a + .b",
-            "$a",
-            "3 as $a",
             "as_",
-            "[1,2,4] as [$a,$b,$c] | $a",
         ];
         // let filters = [".a[]"];
         let mut filters: &mut dyn Iterator<Item = _> = &mut filters.iter().copied();
@@ -234,24 +234,74 @@ mod test_parser {
             filters = &mut code_iter;
         }
         for f in filters {
-            let res = JqGrammar::parse(Rule::pratt_prog, f);
-            let Ok(mut pairs) = res else {
-                panic!("failed to parse {f} -> {:?}", dbg!(res))
-            };
-            // dbg!(&pairs);
-            let mut pairs = pairs.next().unwrap().into_inner();
-            let pairs = pairs.next().unwrap().into_inner();
-            let x = pairs.clone();
-            let _ast = match catch_unwind(|| pratt_parser(pairs)) {
-                Ok(a) => a,
-                Err(panic_) => {
-                    println!("{f}");
-                    println!("{x:#?}");
-                    resume_unwind(panic_)
-                }
-            };
-            //  println!("'{f}' -> {_ast:?}");
+            let _ast = parse_pratt_ast(f).unwrap();
+            // println!("'{f}' -> {_ast:?}");
         }
+    }
+
+    fn print_pairs(pairs: Pairs<Rule>, level: usize) {
+        for p in pairs {
+            println!(
+                "{x:indent$}{:?}, \"{}\"",
+                p.as_rule(),
+                p.as_str(),
+                x = "",
+                indent = level * 2
+            );
+            print_pairs(p.into_inner(), level + 1);
+        }
+    }
+
+    mod ast_checks {
+        use super::*;
+        macro_rules! check_ast {
+            ($([$test_name:ident, $filter:literal, $ast:literal]$(,)?)+) => {
+                $(#[test]
+                fn $test_name() {
+                    assert_ast($filter, $ast);
+                })+
+            }}
+
+        check_ast![
+            [dot, ".", "Dot"]
+            [dot_obj_idx, ".a", "Index(Dot, Some(Ident(\"a\")))"]
+            [dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
+            [numeric_add,"123e-3 + 3","BinOp(Add, Literal(Number(123e-3)), Literal(Number(3)))"]
+            [plain_call, "length", "Call(Ident(\"length\"), None)"]
+            [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("\"c\"")), value: Literal(Number(6)) }])"#]
+            [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
+            [var_binding, "3 as $a", "BindVars(Literal(Number(3)), Variable(\"a\"))"]
+            [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
+        ];
+    }
+
+    fn assert_ast(filter: &str, ref_ast: &str) {
+        let ast = parse_pratt_ast(filter).unwrap();
+        let str_rep = format!("{ast:?}");
+        assert_eq!(&str_rep, ref_ast);
+    }
+
+    fn parse_pratt_ast(filter: &str) -> Result<Ast> {
+        let pairs = parse_pratt(filter).unwrap();
+        let x = pairs.clone();
+        match catch_unwind(|| pratt_parser(pairs)) {
+            Ok(a) => return Ok(a),
+            Err(panic_) => {
+                println!("{filter}");
+                println!("{x:#?}");
+                resume_unwind(panic_)
+            }
+        };
+    }
+
+    fn parse_pratt(filter: &str) -> Result<Pairs<Rule>> {
+        let res = JqGrammar::parse(Rule::pratt_prog, filter);
+        let Err(err) = res else {
+            let pratt_prog = res.unwrap().next().unwrap();
+            let pratt_expr = pratt_prog.into_inner().next().unwrap();
+            return Ok(pratt_expr.into_inner());
+        };
+        panic!("failed to parse {filter} -> {:?}", dbg!(err))
     }
 
     #[test]
