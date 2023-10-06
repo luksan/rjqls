@@ -1,66 +1,35 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
 
-plusminus = _{"+" | "-" }
-number = @{ "-"? ~ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT*)? ~ ( ("e"|"E") ~ plusminus? ~ ASCII_DIGIT+)? }
-bool = { "true" | "false" }
-
-literal = { number | bool | string | null }
-
-value = _{ obj2 | array | string | number | boolean | null }
-
-boolean = { "true" | "false" }
-
-null = { "null" }
-
-obj2 = {
-    "{" ~ "}" |
-    "{" ~ pair2 ~ ("," ~ pair2)* ~ "}"
-}
-pair2 = { ( ident | string | ("(" ~ join_filters ~ ")") ) ~ ":" ~ ( join_filters ) }
-
-array = {
-    "[" ~ "]" |
-    "[" ~ value ~ ("," ~ value)* ~ "]"
-}
-
-string = ${ "\"" ~ inner ~ "\"" }
-inner = @{ char* }
 char = {
     !("\"" | "\\") ~ ANY
     | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
+program = { SOI ~ (func_def* ~ pratt_expr) ~ ("," ~ func_def* ~ pratt_expr)* ~EOI }
+
+func_def = {
+    "def" ~ ident ~
+    ( "("~ (ident | variable) ~ (";" ~ (ident |variable))*  ~")" )?
+    ~ ":" ~ pratt_expr ~ ";"
+}
+
+/// Everything below is for pratt parsing of filter expressions
+
+plusminus = _{"+" | "-" }
+
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT*)? ~ ( ("e"|"E") ~ plusminus? ~ ASCII_DIGIT+)? }
+
+string = ${ "\"" ~ inner_str ~ "\"" }
+inner_str = @{ char* }
+
+null = { "null" }
+bool = { "true" | "false" }
+literal = { number | bool | string | null }
+
 ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  ASCII_ALPHA ~ ( ASCII_ALPHANUMERIC | "_" )* }
-keywords = { "as" }
-
-obj_ident = {"." ~ ( ident | string | "[" ~ string ~ "]") }
-array_constr = { "[" ~ join_filters? ~ "]" }
-
-builtin = {"add" | "map" | "length" | "select" }
-bin_op = {"+" | "-" | "/" | "*" | "==" | "!=" }
-
-operand = { member_select | builtin | literal }
-
-member_select = { obj_ident+ ~ array? }
-filter = {
-    ( operand ~ bin_op ~ operand ) |
-    member_select |
-    builtin ~ ("(" ~ join_filters ~ ")")?   |
-    array_constr |
-    obj |
-    literal |
-    "." |
-    ( "(" ~ join_filters ~ ")" )
-
-
-    ~ ("[" ~ "]")? }
-
-join_filters = { filter ~ ( ("|" | "," ) ~ filter )* }
-
-program = _{ SOI ~ join_filters ~ EOI }
-
+keywords = { "as"|"if"|"elif"|"while"|"end" }
 
 obj = {
     "{" ~ "}" |
@@ -90,8 +59,9 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
   prefix = _{ "###" }
-  postfix = _{ iterate | arr_idx | ident_idx | string_idx }
+  postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx }
     iterate = { "[" ~ "]" }
+    slice = { "[" ~ number? ~ colon ~ number? ~ "]" }
     arr_idx = {"["  ~ pratt_expr ~"]"}
     ident_idx = { ident }
     string_idx = { string }
@@ -106,7 +76,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     primary_group
   }
     dot_primary = { "." }
-    call = { ident ~ "(" ~ pratt_expr ~ ")" }
+    call = { ident ~ "(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")" }
     ident_primary = { ident }
     var_primary = { variable }
     primary_group = { "(" ~ pratt_expr ~ ")" }

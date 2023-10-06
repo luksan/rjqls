@@ -8,7 +8,7 @@ use serde_json::Map;
 use smallvec::SmallVec;
 
 use crate::interpreter::bind_var_pattern::BindVars;
-use crate::parser::ast::{Ast, BinOps, Expr, ExprVisitor, Value};
+use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, Value};
 use crate::parser::parse_filter;
 use crate::value::ValueOps;
 

@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use serde_json::{Map, Value};
 
 use crate::interpreter::ast_eval::{ExprValue, VarScope};
-use crate::parser::ast::{Expr, ExprVisitor};
+use crate::parser::expr_ast::{Expr, ExprVisitor};
 use crate::value::ValueOps;
 
 pub struct BindVars<'v, 'r> {
