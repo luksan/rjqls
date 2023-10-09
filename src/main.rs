@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use bpaf::{Bpaf, Parser};
 use serde_json::Value;
-use tracing::Level;
+use tracing_subscriber::EnvFilter;
 
 use rjqls::interpreter::AstInterpreter;
 
@@ -152,7 +152,7 @@ fn build_input_value_iterator(
 fn main() -> Result<()> {
     let opts = opts().run();
     tracing_subscriber::fmt()
-        .with_max_level(Level::TRACE)
+        .with_env_filter(EnvFilter::default())
         .without_time()
         .init();
 
