@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use crate::interpreter::{Arity, FuncScope, Function};
 use anyhow::Context;
 use anyhow::Result;
 use pest::iterators::Pair;
@@ -42,11 +44,7 @@ impl PairExt for Pair<'_, Rule> {
 
 #[derive(Debug)]
 pub enum Stmt {
-    DefineFunc {
-        name: String,
-        args: SmallVec<[String; 5]>,
-        filter: Ast,
-    },
+    DefineFunc(Function<'static>),
     RootFilter(Ast),
 }
 
@@ -57,47 +55,66 @@ pub fn parse_program(prog: &str) -> Result<Vec<Stmt>> {
     let mut stmts = Vec::new();
     for p in prog {
         let s = match p.as_rule() {
-            Rule::func_def => {
-                let mut pairs = p.into_inner();
-                let name = pairs.next().unwrap().as_str().to_owned();
-                let mut args = SmallVec::new();
-                let mut bound_args = Vec::new();
-                loop {
-                    let pair = pairs.next().unwrap();
-                    match pair.as_rule() {
-                        Rule::ident => {
-                            let argument = pair.inner_string(0);
-                            args.push(argument);
-                        }
-                        Rule::variable => {
-                            let argument = pair.inner_string(1);
-                            bound_args.push(Ast::new(BindVars(
-                                Ast::new(Call(argument.clone(), Default::default())),
-                                Ast::new(Variable(argument.clone())),
-                            )));
-                            args.push(argument);
-                        }
-                        Rule::pratt_expr => {
-                            let mut filter = pratt_parser(pair.into_inner());
-                            for binding in bound_args {
-                                filter = Ast::new(Pipe(binding, filter))
-                            }
-                            break Stmt::DefineFunc { name, args, filter };
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-            }
-            Rule::pratt_expr => {
-                let expr = pratt_parser(p.into_inner());
-                Stmt::RootFilter(expr)
-            }
+            Rule::func_def => Stmt::DefineFunc(parse_func_def(p)),
+            Rule::pratt_expr => Stmt::RootFilter(pratt_parser(p.into_inner())),
             Rule::EOI => break,
             _ => unreachable!("Unexpected rule {:?} when parsing program", p.as_rule()),
         };
         stmts.push(s);
     }
     Ok(stmts)
+}
+
+pub struct JqModule {
+    pub(crate) functions: FuncScope<'static, 'static>,
+}
+
+pub fn parse_module(code: &str) -> Result<JqModule> {
+    let mut pairs = JqGrammar::parse(Rule::jq_module, code)?;
+    let mut functions = FuncScope::default();
+    for p in pairs.next().unwrap().into_inner() {
+        match p.as_rule() {
+            Rule::func_def => {
+                let f = parse_func_def(p);
+                functions.push(f);
+            }
+
+            _ => unreachable!("Missing rule in module parser"),
+        }
+    }
+    Ok(JqModule { functions })
+}
+
+fn parse_func_def(p: Pair<Rule>) -> Function<'static> {
+    let mut pairs = p.into_inner();
+    let name = pairs.next().unwrap().as_str().to_owned();
+    let mut args = SmallVec::new();
+    let mut bound_args = Vec::new();
+    loop {
+        let pair = pairs.next().unwrap();
+        match pair.as_rule() {
+            Rule::ident => {
+                let argument = pair.inner_string(0);
+                args.push(argument);
+            }
+            Rule::variable => {
+                let argument = pair.inner_string(1);
+                bound_args.push(Ast::new(BindVars(
+                    Ast::new(Call(argument.clone(), Default::default())),
+                    Ast::new(Variable(argument.clone())),
+                )));
+                args.push(argument);
+            }
+            Rule::pratt_expr => {
+                let mut filter = pratt_parser(pair.into_inner());
+                for binding in bound_args {
+                    filter = Ast::new(Pipe(binding, filter))
+                }
+                break Function::new(name, args, filter);
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -117,9 +134,10 @@ mod test {
     fn parse_func_bound_args() {
         let prog = "def f($a): $a+3; .";
         let stmts = parse_program(prog).unwrap();
-        let Stmt::DefineFunc { filter, .. } = &stmts[0] else {
+        let Stmt::DefineFunc(func) = &stmts[0] else {
             panic!()
         };
+        let filter = func.filter();
         for _x in stmts.iter() {
             // println!("{_x:?}")
         }

@@ -5,11 +5,12 @@ use anyhow::{bail, Result};
 use serde_json::Value;
 use smallvec::SmallVec;
 
-use crate::interpreter::ast_eval::{ExprEval, ExprResult, VarScope};
-use crate::interpreter::func_scope::FuncScope;
+pub use func_scope::FuncScope;
+
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
-use crate::parser::Stmt;
+use crate::parser::{parse_module, JqModule, Stmt};
+use ast_eval::{ExprEval, ExprResult, VarScope};
 
 pub mod ast_eval;
 mod bind_var_pattern;
@@ -43,7 +44,8 @@ mod func_scope {
             }
         }
 
-        pub fn push(&mut self, name: String, func: Function<'static>) {
+        pub fn push(&mut self, func: Function<'static>) {
+            let name = func.name.clone();
             self.owned
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
         }
@@ -133,22 +135,34 @@ impl Deref for FCow<'_> {
 #[derive(Debug)]
 pub struct Function<'e> {
     name: String,
-    args: SmallVec<[String; 5]>,
+    args: FuncDefArgs,
     filter: FCow<'e>,
 }
-
+pub type FuncDefArgs = SmallVec<[String; 5]>;
 pub type FuncRet = Result<Value>;
-pub type FuncArgs<'e> = SmallVec<[&'e Expr; 5]>;
+pub type FuncCallArgs<'e> = SmallVec<[&'e Expr; 5]>;
 
 impl<'e> Function<'e> {
+    pub fn new(name: String, args: FuncDefArgs, filter: Ast) -> Function<'static> {
+        Function {
+            name,
+            args,
+            filter: FCow::Owned(filter),
+        }
+    }
+
     pub fn arity(&self) -> Arity {
         self.args.len()
+    }
+
+    pub fn filter(&self) -> &Expr {
+        &self.filter
     }
 
     pub fn bind<'scope>(
         &'scope self,
         func_scope: &'scope FuncScope,
-        arguments: FuncArgs<'scope>,
+        arguments: FuncCallArgs<'scope>,
         arg_var_scope: Arc<VarScope>,
     ) -> Result<Generator<'scope>> {
         if self.arity() != arguments.len() {
@@ -205,20 +219,16 @@ pub struct AstInterpreter {
 
 impl AstInterpreter {
     pub fn new(code: &str) -> Result<Self> {
+        let builtin = Self::load_builtins()?;
         let mut this = Self {
-            func_scope: Default::default(),
+            func_scope: builtin.functions,
             root_filters: Default::default(),
         };
         let stmts = parser::parse_program(code)?;
         for stmt in stmts {
             match stmt {
-                Stmt::DefineFunc { name, args, filter } => {
-                    let f = Function {
-                        name: name.clone(),
-                        filter: FCow::Owned(filter),
-                        args,
-                    };
-                    this.func_scope.push(name, f);
+                Stmt::DefineFunc(f) => {
+                    this.func_scope.push(f);
                 }
                 Stmt::RootFilter(f) => {
                     this.root_filters.push(f);
@@ -237,6 +247,11 @@ impl AstInterpreter {
             ret.extend(v);
         }
         Ok(ret)
+    }
+
+    fn load_builtins() -> Result<JqModule> {
+        let code = std::fs::read_to_string("src/builtins/builtin.jq")?;
+        parse_module(&code)
     }
 }
 

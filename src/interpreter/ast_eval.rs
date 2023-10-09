@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
-use crate::interpreter::FuncArgs;
+use crate::interpreter::FuncCallArgs;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, Value};
 use crate::value::ValueOps;
 
@@ -89,7 +89,7 @@ impl<'a> ExprEval<'a> {
             let gen = f
                 .bind(
                     self.func_scope,
-                    FuncArgs::from(args),
+                    FuncCallArgs::from(args),
                     self.variables.borrow().clone(),
                 )
                 .unwrap();

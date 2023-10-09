@@ -15,6 +15,9 @@ func_def = {
     ~ ":" ~ pratt_expr ~ ";"
 }
 
+jq_module = { SOI ~ (func_def | module_directive)* ~ EOI }
+module_directive = {"module" ~ pratt_expr ~ ";"}
+
 /// Everything below is for pratt parsing of filter expressions
 
 plusminus = _{"+" | "-" }
