@@ -8,21 +8,10 @@ use serde_json::Map;
 use smallvec::SmallVec;
 
 use crate::interpreter::bind_var_pattern::BindVars;
+use crate::interpreter::func_scope::FuncScope;
+use crate::interpreter::FuncArgs;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, Value};
-use crate::parser::parse_filter;
 use crate::value::ValueOps;
-
-pub fn eval(input: &str, filter: &str) -> Result<Vec<Value>> {
-    let ast = parse_filter(filter)?;
-    let input: Value = serde_json::from_str(input)?;
-    eval_parsed(input, &ast)
-}
-
-pub fn eval_parsed(input: Value, filter: &Expr) -> Result<Vec<Value>> {
-    let evaluator = ExprEval::new(input);
-    let vals = filter.accept(&evaluator)?;
-    Ok(Vec::from_iter(vals))
-}
 
 struct JqFunc<'expr> {
     fun: Box<dyn Fn(&Value) -> ExprResult + 'expr>,
@@ -76,19 +65,32 @@ impl VarScope {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExprEval {
+pub struct ExprEval<'func> {
     input: Value,
     variables: RefCell<Arc<VarScope>>,
+    func_scope: &'func FuncScope<'func, 'func>,
 }
 
-impl ExprEval {
-    pub fn new(input: Value) -> Self {
+impl<'a> ExprEval<'a> {
+    pub fn new(func_scope: &'a FuncScope, input: Value) -> Self {
         Self {
             input,
             variables: VarScope::new().into(),
+            func_scope,
         }
     }
-    fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>> {
+    fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>>
+    where
+        'a: 'expr,
+    {
+        if let Some(f) = self.func_scope.get_func_ref(name, args.len()) {
+            let gen = f.bind(&self.func_scope, FuncArgs::from(args)).unwrap();
+            let ret = JqFunc {
+                fun: Box::new(move |val: &Value| gen.apply(val)),
+            };
+            return Ok(ret);
+        }
+
         match (name, args.len()) {
             ("add", 0) => Ok(JqFunc {
                 fun: Box::new(|val: &Value| {
@@ -106,7 +108,7 @@ impl ExprEval {
                 let arg = args[0];
                 Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
-                        let eval = ExprEval::new(val.clone());
+                        let eval = ExprEval::new(self.func_scope, val.clone());
                         let vals = arg.accept(&eval)?;
                         let mut ret = SmallVec::new();
                         for bool in vals.iter().map(|v| v.is_truthy()) {
@@ -123,7 +125,7 @@ impl ExprEval {
                 Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
                         let mut ret = Vec::new();
-                        let mut eval = ExprEval::new(Value::Null);
+                        let mut eval = ExprEval::new(self.func_scope, Value::Null);
                         for v in val.iterate()? {
                             eval.input = v.clone();
                             let vals = filter.accept(&eval)?;
@@ -161,7 +163,7 @@ pub type ExprResult = Result<ExprValue>;
 fn expr_val_from_value(val: Value) -> ExprResult {
     Ok(SmallVec::from_elem(val, 1))
 }
-impl ExprVisitor<ExprResult> for ExprEval {
+impl ExprVisitor<ExprResult> for ExprEval<'_> {
     fn default(&self) -> ExprResult {
         panic!();
     }
@@ -204,16 +206,13 @@ impl ExprVisitor<ExprResult> for ExprEval {
         Ok(ret)
     }
 
-    fn visit_call(&self, name: &Expr, args: Option<&Expr>) -> ExprResult {
-        let name = name.accept(self)?;
-        assert_eq!(name.len(), 1);
+    fn visit_call(&self, name: &str, args: &[Expr]) -> ExprResult {
         let mut arg_vec: SmallVec<[_; 1]> = SmallVec::with_capacity(1);
 
-        if let Some(args) = args {
-            arg_vec.push(args)
+        for a in args {
+            arg_vec.push(a);
         }
-        self.get_function(name[0].as_str().unwrap(), &arg_vec)?
-            .call(&self.input)
+        self.get_function(name, &arg_vec)?.call(&self.input)
     }
 
     fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> ExprResult {
@@ -322,6 +321,8 @@ impl ExprVisitor<ExprResult> for ExprEval {
 mod test {
     use serde_json::to_value;
 
+    use crate::parser::parse_filter;
+
     use super::*;
 
     #[test]
@@ -342,7 +343,8 @@ mod test {
     }
 
     fn eval_expr(filter: &str, input: Value) -> ExprResult {
-        let eval = ExprEval::new(input);
+        let scope = FuncScope::default();
+        let eval = ExprEval::new(&scope, input);
         let ast = parse_filter(filter).unwrap();
         ast.accept(&eval)
     }

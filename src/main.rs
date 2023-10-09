@@ -6,9 +6,7 @@ use anyhow::{Context, Result};
 use bpaf::{Bpaf, Parser};
 use serde_json::Value;
 
-use rjqls::interpreter::ast_eval::eval_parsed;
-use rjqls::parser::expr_ast::Expr;
-use rjqls::parser::parse_filter;
+use rjqls::interpreter::AstInterpreter;
 
 #[derive(Bpaf, Clone, Debug)]
 struct CommonOpts {
@@ -100,8 +98,8 @@ fn read_value_from_stdin() -> Result<Option<Value>> {
     }
 }
 
-fn eval_input_and_print(input: Value, filter: &Expr) -> Result<()> {
-    for val in eval_parsed(input, filter)? {
+fn eval_input_and_print(input: Value, interpreter: &mut AstInterpreter) -> Result<()> {
+    for val in interpreter.eval_input(input)? {
         println!("{val}")
     }
 
@@ -153,7 +151,7 @@ fn build_input_value_iterator(
 fn main() -> Result<()> {
     let opts = opts().run();
     let (copts, filter_str, input_files) = opts.get_common_filter_and_files()?;
-    let prog = parse_filter(&filter_str)?;
+    let mut prog = AstInterpreter::new(&filter_str)?;
     let inputs = build_input_value_iterator(&copts, input_files);
 
     if copts.slurp {
@@ -171,10 +169,10 @@ fn main() -> Result<()> {
                 .collect::<Result<_>>()?;
             Value::String(inputs.join("\n"))
         };
-        eval_input_and_print(input, &prog)?;
+        eval_input_and_print(input, &mut prog)?;
     } else {
         for inp in inputs {
-            eval_input_and_print(inp?, &prog)?;
+            eval_input_and_print(inp?, &mut prog)?;
         }
     }
     Ok(())

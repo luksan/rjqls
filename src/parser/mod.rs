@@ -23,7 +23,7 @@ pub fn parse_filter(filter: &str) -> Result<Ast> {
     let mut pairs = JqGrammar::parse(Rule::pratt_prog, filter).context("Parse error")?;
     let mut pairs = pairs.next().unwrap().into_inner();
     let pairs = pairs.next().unwrap().into_inner();
-    Ok(pratt_expr::pratt_parser(pairs))
+    Ok(pratt_parser(pairs))
 }
 
 trait PairExt {
@@ -43,7 +43,7 @@ impl PairExt for Pair<'_, Rule> {
 pub enum Stmt {
     DefineFunc {
         name: String,
-        args: SmallVec<[(String, FuncArgType); 3]>,
+        args: SmallVec<[(String, FuncArgType); 5]>,
         filter: Ast,
     },
     RootFilter(Ast),
@@ -114,7 +114,7 @@ mod test {
     fn parse_func_def() -> Result<()> {
         let funcs = ["def x: 3;", "def x(a): . ;"];
         for func in funcs.iter() {
-            let res = JqGrammar::parse(Rule::func_def, func)?;
+            let _res = JqGrammar::parse(Rule::func_def, func)?;
         }
         Ok(())
     }

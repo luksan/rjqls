@@ -91,16 +91,17 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::arr => Expr::Array(vec_from_commas(parse_inner_expr(p))),
                 Rule::call => {
                     let mut x = p.into_inner();
-                    let ident = Expr::Ident(x.next().unwrap().inner_string(0));
-                    let params = parse_inner_expr(x.next().unwrap());
-                    Expr::Call(Ast::new(ident), Some(params))
+                    let ident = x.next().unwrap().inner_string(0);
+                    let mut params = Vec::new();
+                    for param in x {
+                        let param = parse_inner_expr(param);
+                        params.push(*param);
+                    }
+                    Expr::Call(ident, params)
                 }
                 Rule::dot_primary => Expr::Dot,
                 Rule::ident => Expr::Ident(p.inner_string(0)),
-                Rule::ident_primary => {
-                    let ident = Expr::Ident(p.inner_string(1));
-                    Expr::Call(Ast::new(ident), None)
-                }
+                Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
                 Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(vec_from_commas(parse_object(p))),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
@@ -240,12 +241,13 @@ mod test_parser {
             [dot_obj_idx, ".a", "Index(Dot, Some(Ident(\"a\")))"]
             [dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
             [numeric_add,"123e-3 + 3","BinOp(Add, Literal(Number(123e-3)), Literal(Number(3)))"]
-            [plain_call, "length", "Call(Ident(\"length\"), None)"]
+            [plain_call, "length", "Call(\"length\", [])"]
             [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("\"c\"")), value: Literal(Number(6)) }])"#]
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
             [var_binding, "3 as $a", "BindVars(Literal(Number(3)), Variable(\"a\"))"]
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
+            [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
         ];
     }
 

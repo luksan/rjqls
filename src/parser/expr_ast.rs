@@ -19,7 +19,7 @@ pub enum Expr {
     Array(Vec<Expr>),
     BindVars(Ast, Ast),
     BinOp(BinOps, Ast, Ast),
-    Call(Ast, Option<Ast>),
+    Call(String, Vec<Expr>),
     Comma(Ast, Ast),
     Dot,
     Ident(String),
@@ -39,7 +39,7 @@ impl Expr {
             Expr::Array(r) => visitor.visit_array(r),
             Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
-            Expr::Call(name, args) => visitor.visit_call(name, args.as_ref().map(|ast| &**ast)),
+            Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
             Expr::Dot => visitor.visit_dot(),
             Expr::Ident(i) => visitor.visit_ident(i),
@@ -77,9 +77,10 @@ pub trait ExprVisitor<R> {
         rhs.accept(self);
         self.default()
     }
-    fn visit_call(&self, name: &Expr, args: Option<&Expr>) -> R {
-        name.accept(self);
-        args.map(|a| a.accept(self));
+    fn visit_call(&self, name: &str, args: &[Expr]) -> R {
+        for a in args {
+            a.accept(self);
+        }
         self.default()
     }
     fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> R {
@@ -184,11 +185,16 @@ impl ExprVisitor<()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_call(&self, name: &Expr, args: Option<&Expr>) -> () {
-        name.accept(self);
-        if let Some(args) = args {
+    fn visit_call(&self, name: &str, args: &[Expr]) -> () {
+        self.puts(name);
+        if !args.is_empty() {
             self.putc('(');
-            args.accept(self);
+            args[0].accept(self);
+            for arg in &args[1..] {
+                self.puts("; ");
+                arg.accept(self);
+            }
+
             self.putc(')');
         }
     }
