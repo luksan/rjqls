@@ -9,7 +9,7 @@ use crate::interpreter::ast_eval::{ExprEval, ExprResult, VarScope};
 use crate::interpreter::func_scope::FuncScope;
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
-use crate::parser::{FuncArgType, Stmt};
+use crate::parser::Stmt;
 
 pub mod ast_eval;
 mod bind_var_pattern;
@@ -133,7 +133,7 @@ impl Deref for FCow<'_> {
 #[derive(Debug)]
 pub struct Function<'e> {
     name: String,
-    args: SmallVec<[(String, FuncArgType); 5]>,
+    args: SmallVec<[String; 5]>,
     filter: FCow<'e>,
 }
 
@@ -175,7 +175,7 @@ impl Generator<'_> {
     pub fn apply(&self, input: &Value) -> ExprResult {
         let mut scope = self.func_scope.new_inner();
         let mut args = Vec::new();
-        for ((name, arg_type), arg) in self
+        for (name, arg) in self
             .function
             .args
             .iter()
@@ -252,7 +252,7 @@ mod test {
             r#"
        # def x(a; $b): . + a + $b + $b;
        # def foo(f): f|f;
-        def addvalue(f): f as $f | map(. + $f);
+        def addvalue($f): map(. + $f);
 
         [1,2,3] | addvalue(3)
         # 5|foo(.*2)

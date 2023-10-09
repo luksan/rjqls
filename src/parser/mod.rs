@@ -8,6 +8,7 @@ use pest::Parser;
 use smallvec::SmallVec;
 
 use crate::parser::expr_ast::Ast;
+use crate::parser::expr_ast::Expr::{BindVars, Call, Pipe, Variable};
 use crate::parser::pratt_expr::pratt_parser;
 
 pub mod expr_ast;
@@ -43,16 +44,10 @@ impl PairExt for Pair<'_, Rule> {
 pub enum Stmt {
     DefineFunc {
         name: String,
-        args: SmallVec<[(String, FuncArgType); 5]>,
+        args: SmallVec<[String; 5]>,
         filter: Ast,
     },
     RootFilter(Ast),
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum FuncArgType {
-    Callback,
-    ValueBinding,
 }
 
 pub fn parse_program(prog: &str) -> Result<Vec<Stmt>> {
@@ -66,19 +61,27 @@ pub fn parse_program(prog: &str) -> Result<Vec<Stmt>> {
                 let mut pairs = p.into_inner();
                 let name = pairs.next().unwrap().as_str().to_owned();
                 let mut args = SmallVec::new();
+                let mut bound_args = Vec::new();
                 loop {
                     let pair = pairs.next().unwrap();
                     match pair.as_rule() {
                         Rule::ident => {
                             let argument = pair.inner_string(0);
-                            args.push((argument, FuncArgType::Callback))
+                            args.push(argument);
                         }
                         Rule::variable => {
                             let argument = pair.inner_string(1);
-                            args.push((argument, FuncArgType::ValueBinding))
+                            bound_args.push(Ast::new(BindVars(
+                                Ast::new(Call(argument.clone(), Default::default())),
+                                Ast::new(Variable(argument.clone())),
+                            )));
+                            args.push(argument);
                         }
                         Rule::pratt_expr => {
-                            let filter = pratt_parser(pair.into_inner());
+                            let mut filter = pratt_parser(pair.into_inner());
+                            for binding in bound_args {
+                                filter = Ast::new(Pipe(binding, filter))
+                            }
                             break Stmt::DefineFunc { name, args, filter };
                         }
                         _ => unreachable!(),
@@ -108,6 +111,22 @@ mod test {
         for _x in stmts {
             // println!("{_x:?}")
         }
+    }
+
+    #[test]
+    fn parse_func_bound_args() {
+        let prog = "def f($a): $a+3; .";
+        let stmts = parse_program(prog).unwrap();
+        let Stmt::DefineFunc { filter, .. } = &stmts[0] else {
+            panic!()
+        };
+        for _x in stmts.iter() {
+            // println!("{_x:?}")
+        }
+        assert_eq!(
+            format!("{filter:?}"),
+            r#"Pipe(BindVars(Call("a", []), Variable("a")), BinOp(Add, Variable("a"), Literal(Number(3))))"#
+        )
     }
 
     #[test]
