@@ -209,6 +209,7 @@ impl ExprVisitor<ExprResult> for ExprEval<'_> {
                     BinOps::Div => l.div(r),
                     BinOps::Eq => Ok(Value::Bool(l == r)),
                     BinOps::NotEq => Ok(Value::Bool(l != r)),
+                    BinOps::Less => Ok(l.less_than(r)),
                 };
                 ret.push(r?);
             }
@@ -239,6 +240,34 @@ impl ExprVisitor<ExprResult> for ExprEval<'_> {
     fn visit_ident(&self, ident: &str) -> ExprResult {
         expr_val_from_value(Value::String(ident.to_string()))
     }
+
+    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> ExprResult {
+        let mut ret = Default::default();
+        fn check_remaining(
+            this: &ExprEval,
+            ret: &mut ExprValue,
+            cond: &[Expr],
+            branches: &[Expr],
+        ) -> Result<()> {
+            if cond.is_empty() {
+                ret.append(&mut branches[0].accept(this)?);
+                return Ok(());
+            }
+            let vals = cond[0].accept(this)?;
+            for v in vals {
+                if v.is_truthy() {
+                    ret.append(&mut branches[0].accept(this)?);
+                } else {
+                    check_remaining(this, ret, &cond[1..], &branches[1..])?;
+                }
+            }
+            Ok(())
+        }
+
+        check_remaining(self, &mut ret, cond, branches)?;
+        Ok(ret)
+    }
+
     // array or object index
     fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> ExprResult {
         let e = expr
@@ -315,15 +344,15 @@ impl ExprVisitor<ExprResult> for ExprEval<'_> {
         Ok(ret)
     }
 
-    fn visit_variable(&self, name: &str) -> ExprResult {
-        self.get_variable(name)
-    }
-
     fn visit_scope(&self, inner: &Expr) -> ExprResult {
         self.begin_scope();
         let r = inner.accept(self);
         self.end_scope();
         r
+    }
+
+    fn visit_variable(&self, name: &str) -> ExprResult {
+        self.get_variable(name)
     }
 }
 
@@ -350,6 +379,16 @@ mod test {
         let filter = "(3 as $a | $a) | $a";
         let err = eval_expr(filter, Value::Null).unwrap_err();
         assert_eq!(&err.to_string(), "Variable 'a' is not defined.")
+    }
+
+    #[test]
+    fn test_if_else() {
+        let filter = r#"if .[] then "hej" elif .[] == false then "hmm" else 4 end"#;
+        let val = eval_expr(filter, serde_json::from_str("[1,false,3]").unwrap()).unwrap();
+        assert_eq!(
+            format!("{val:?}"),
+            r#"[String("hej"), Number(4), String("hmm"), Number(4), String("hej")]"#
+        )
     }
 
     fn eval_expr(filter: &str, input: Value) -> ExprResult {

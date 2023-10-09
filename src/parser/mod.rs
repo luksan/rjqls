@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::interpreter::{Arity, FuncScope, Function};
+use crate::interpreter::{FuncScope, Function};
 use anyhow::Context;
 use anyhow::Result;
 use pest::iterators::Pair;

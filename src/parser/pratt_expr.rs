@@ -1,6 +1,7 @@
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use serde_json::Value;
+use std::str::FromStr;
 
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
 use crate::parser::{PairExt, Rule, PRATT_PARSER};
@@ -18,7 +19,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         )
         .op(Op::infix(Rule::as_, Assoc::Left))
         .op(Op::infix(Rule::eq, Assoc::Left) | // fmt
-            Op::infix(Rule::neq, Assoc::Left))
+            Op::infix(Rule::neq, Assoc::Left)| Op::infix(Rule::ord, Assoc::Left))
         .op(Op::infix(Rule::add, Assoc::Left) // fmt
             | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
@@ -77,6 +78,33 @@ fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {
     ret
 }
 
+fn parse_if_expr(pair: Pair<Rule>) -> Expr {
+    let mut pairs = pair.into_inner();
+    let cond = pratt_parser(pairs.next().unwrap().into_inner());
+    let if_true = pratt_parser(pairs.next().unwrap().into_inner());
+    let mut cond = vec![*cond];
+    let mut branch = vec![*if_true];
+    let mut else_ = Expr::Dot;
+    for p in pairs {
+        match p.as_rule() {
+            Rule::elif => {
+                let mut x = p.into_inner();
+                let c = pratt_parser(x.next().unwrap().into_inner());
+                let b = pratt_parser(x.next().unwrap().into_inner());
+                cond.push(*c);
+                branch.push(*b);
+            }
+            Rule::else_ => {
+                else_ = *pratt_parser(p.into_inner());
+                break;
+            }
+            _ => unreachable!(),
+        }
+    }
+    branch.push(else_);
+    Expr::IfElse(cond, branch)
+}
+
 pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
     let pratt = get_pratt_parser();
 
@@ -102,6 +130,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::dot_primary => Expr::Dot,
                 Rule::ident => Expr::Ident(p.inner_string(0)),
                 Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
+                Rule::if_cond => parse_if_expr(p),
                 Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(vec_from_commas(parse_object(p))),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
@@ -122,6 +151,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::comma => Expr::Comma(lhs, rhs),
                 Rule::eq => Expr::BinOp(BinOps::Eq, lhs, rhs),
                 Rule::neq => Expr::BinOp(BinOps::NotEq, lhs, rhs),
+                Rule::ord => Expr::BinOp(BinOps::from_str(op.as_str()).unwrap(), lhs, rhs),
                 Rule::pipe => Expr::Pipe(lhs, rhs),
                 r => {
                     panic!("Missing pratt infix rule {r:?}")
@@ -248,6 +278,7 @@ mod test_parser {
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
+            [if_else, "if . then 3 elif 3>4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
         ];
     }
 

@@ -31,8 +31,8 @@ null = { "null" }
 bool = { "true" | "false" }
 literal = { number | bool | string | null }
 
-ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  ASCII_ALPHA ~ ( ASCII_ALPHANUMERIC | "_" )* }
-keywords = { "as"|"if"|"elif"|"while"|"end" }
+ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  (ASCII_ALPHA|"_") ~ ( ASCII_ALPHANUMERIC | "_" )* }
+keywords = { "as"|"if"|"then"|"else"|"elif"|"while"|"end" }
 
 obj = {
     "{" ~ "}" |
@@ -51,13 +51,14 @@ variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{"
 
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
-  infix = _{ eq | neq | add | sub| mul | div | comma | pipe | as_ }
+  infix = _{ ord | eq | neq | add | sub| mul | div | comma | pipe | as_ }
     eq = { "==" }
     neq = { "!=" }
     add = { "+" }
     sub = { "-" }
     mul = { "*" }
     div = { "/" }
+    ord = { "<=" | ">=" | "<"| ">"}
     comma = { "," }
     pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
@@ -70,6 +71,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     string_idx = { string }
   primary = _{
     obj |
+    if_cond |
     dot_primary |
     call |
     literal |
@@ -83,5 +85,8 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     ident_primary = { ident }
     var_primary = { variable }
     primary_group = { "(" ~ pratt_expr ~ ")" }
+    if_cond = { "if" ~ pratt_expr ~ "then" ~ pratt_expr ~ elif* ~ else_? ~ "end" }
+    elif = {"elif" ~ pratt_expr ~ "then" ~ pratt_expr}
+    else_ = {"else" ~ pratt_expr}
 
 

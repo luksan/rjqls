@@ -12,6 +12,7 @@ pub trait ValueOps {
     fn div(&self, other: &Self) -> Result<Value>;
 
     fn is_truthy(&self) -> bool;
+    fn less_than(&self, other: &Self) -> Value;
     fn index(&self, index: &Value) -> Result<Value>;
     fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Value> + '_>>;
 
@@ -68,6 +69,13 @@ impl ValueOps for Value {
             Value::Bool(b) => *b,
             _ => true,
         }
+    }
+
+    fn less_than(&self, other: &Self) -> Value {
+        Value::Bool(match (self, other) {
+            (Value::Null, _) => false,
+            _ => unimplemented!(),
+        })
     }
 
     fn index(&self, index: &Value) -> Result<Value> {

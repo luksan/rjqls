@@ -1,5 +1,7 @@
 use std::cell::RefCell;
+use std::str::FromStr;
 
+use anyhow::bail;
 pub use serde_json::Value;
 use tracing::{instrument, trace};
 
@@ -9,8 +11,22 @@ pub enum BinOps {
     Sub,
     Mul,
     Div,
+
     Eq,
     NotEq,
+
+    Less,
+}
+
+impl FromStr for BinOps {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            ">" => Self::Less,
+            _ => bail!("Failed to parse '{s}' as a BinOp"),
+        })
+    }
 }
 
 pub type Ast = Box<Expr>;
@@ -24,6 +40,8 @@ pub enum Expr {
     Comma(Ast, Ast),
     Dot,
     Ident(String),
+    // the first vec is conditions, the second is true branches, with else as the last element
+    IfElse(Vec<Expr>, Vec<Expr>),
     Index(Ast, Option<Ast>), // [2]
     Literal(Value),
     Object(Vec<Expr>),
@@ -46,6 +64,7 @@ impl Expr {
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
             Expr::Dot => visitor.visit_dot(),
             Expr::Ident(i) => visitor.visit_ident(i),
+            Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref().map(|ast| &**ast)),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
@@ -95,6 +114,12 @@ pub trait ExprVisitor<R> {
         self.default()
     }
     fn visit_ident(&self, ident: &str) -> R {
+        self.default()
+    }
+    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> R {
+        for x in cond.iter().chain(branches.iter()) {
+            x.accept(self);
+        }
         self.default()
     }
     fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> R {
@@ -214,6 +239,22 @@ impl ExprVisitor<()> for ExprPrinter {
 
     fn visit_ident(&self, ident: &str) -> () {
         self.puts(ident)
+    }
+
+    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> () {
+        self.puts("if ");
+        cond[0].accept(self);
+        self.puts(" then ");
+        branches[0].accept(self);
+        for (c, b) in cond[1..].iter().zip(branches[1..].iter()) {
+            self.puts(" elif ");
+            c.accept(self);
+            self.puts(" then ");
+            b.accept(self);
+        }
+        self.puts(" else ");
+        branches.last().unwrap().accept(self);
+        self.puts(" end");
     }
 
     fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> () {
