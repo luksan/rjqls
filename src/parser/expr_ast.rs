@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 
 pub use serde_json::Value;
+use tracing::{instrument, trace};
 
 #[derive(Debug, Copy, Clone)]
 pub enum BinOps {
@@ -34,7 +35,9 @@ pub enum Expr {
 }
 
 impl Expr {
+    #[instrument(name = "A", level = "trace", skip_all)]
     pub fn accept<R>(&self, visitor: &(impl ExprVisitor<R> + ?Sized)) -> R {
+        trace!("Visiting {self:?}");
         match self {
             Expr::Array(r) => visitor.visit_array(r),
             Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),

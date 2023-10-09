@@ -1,10 +1,11 @@
 use std::ops::Deref;
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use serde_json::Value;
 use smallvec::SmallVec;
 
-use crate::interpreter::ast_eval::{ExprEval, ExprResult};
+use crate::interpreter::ast_eval::{ExprEval, ExprResult, VarScope};
 use crate::interpreter::func_scope::FuncScope;
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
@@ -48,19 +49,14 @@ mod func_scope {
         }
 
         pub fn push_ref(&mut self, func: &'f Function) {
-            self.borrowed.insert(
-                FuncMapKey {
-                    0: func.name.clone(),
-                    1: func.arity(),
-                },
-                func.clone(),
-            );
+            self.borrowed
+                .insert(FuncMapKey(func.name.clone(), func.arity()), func.clone());
         }
 
         pub fn get_func_ref(&self, name: &str, arity: Arity) -> Option<&Function> {
             self.borrowed
                 .get(&(name, arity) as &dyn MapKeyT)
-                .map(|f| *f)
+                .copied()
                 .or_else(|| {
                     self.owned
                         .get(&(name, arity) as &dyn MapKeyT)
@@ -90,7 +86,7 @@ mod func_scope {
     }
     impl MapKeyT for (&str, Arity) {
         fn name(&self) -> &str {
-            &self.0
+            self.0
         }
 
         fn arity(&self) -> Arity {
@@ -129,7 +125,7 @@ impl Deref for FCow<'_> {
     fn deref(&self) -> &Self::Target {
         match self {
             FCow::Owned(e) => e,
-            FCow::Borrowed(b) => &**b,
+            FCow::Borrowed(b) => b,
         }
     }
 }
@@ -153,6 +149,7 @@ impl<'e> Function<'e> {
         &'scope self,
         func_scope: &'scope FuncScope,
         arguments: FuncArgs<'scope>,
+        arg_var_scope: Arc<VarScope>,
     ) -> Result<Generator<'scope>> {
         if self.arity() != arguments.len() {
             bail!("Function called with incorrect number of arguments")
@@ -161,6 +158,7 @@ impl<'e> Function<'e> {
             function: self,
             func_scope,
             arguments,
+            arg_var_scope,
         })
     }
 }
@@ -170,6 +168,7 @@ pub struct Generator<'e> {
     function: &'e Function<'e>,
     func_scope: &'e FuncScope<'e, 'e>,
     arguments: SmallVec<[&'e Expr; 5]>,
+    arg_var_scope: Arc<VarScope>,
 }
 
 impl Generator<'_> {
@@ -192,8 +191,8 @@ impl Generator<'_> {
         for func in args.iter() {
             scope.push_ref(func)
         }
-        scope.push_ref(&self.function); // push ourselves to enable recursion
-        let eval = ExprEval::new(&scope, input.clone());
+        scope.push_ref(self.function); // push ourselves to enable recursion
+        let eval = ExprEval::new(&scope, input.clone(), self.arg_var_scope.clone());
         self.function.filter.accept(&eval)
     }
 }
@@ -232,7 +231,8 @@ impl AstInterpreter {
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
         let mut ret = Vec::new();
         for flt in self.root_filters.iter() {
-            let eval = ExprEval::new(&self.func_scope, input.clone());
+            let var_scope = VarScope::new();
+            let eval = ExprEval::new(&self.func_scope, input.clone(), var_scope);
             let v = flt.accept(&eval)?;
             ret.extend(v);
         }
@@ -250,13 +250,17 @@ mod test {
     fn test_interpret_fn() {
         let mut intr = AstInterpreter::new(
             r#"
-        def x(a): . + a;
-        x(1)
+       # def x(a; $b): . + a + $b + $b;
+       # def foo(f): f|f;
+        def addvalue(f): f as $f | map(. + $f);
+
+        [1,2,3] | addvalue(3)
+        # 5|foo(.*2)
         "#,
         )
         .unwrap();
 
         let x = intr.eval_input(to_value(1).unwrap()).unwrap();
-        assert_eq!(x[0], to_value(2.0).unwrap())
+        assert_eq!(x[0], to_value([4.0, 5.0, 6.0]).unwrap())
     }
 }

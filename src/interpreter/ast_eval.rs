@@ -14,11 +14,11 @@ use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, Value};
 use crate::value::ValueOps;
 
 struct JqFunc<'expr> {
-    fun: Box<dyn Fn(&Value) -> ExprResult + 'expr>,
+    fun: Box<dyn FnOnce(&Value) -> ExprResult + 'expr>,
 }
 
 impl JqFunc<'_> {
-    fn call(&self, value: &Value) -> ExprResult {
+    fn call(self, value: &Value) -> ExprResult {
         (self.fun)(value)
     }
 }
@@ -30,13 +30,14 @@ pub struct VarScope {
 }
 
 impl VarScope {
-    fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Self {
             entries: Default::default(),
             parent: None,
         }
         .into()
     }
+
     fn begin_scope(self: &Arc<Self>) -> Arc<Self> {
         Self {
             entries: Default::default(),
@@ -44,6 +45,7 @@ impl VarScope {
         }
         .into()
     }
+
     fn get_parent(&self) -> Option<&Arc<Self>> {
         self.parent.as_ref()
     }
@@ -54,7 +56,7 @@ impl VarScope {
             return Ok(val.clone());
         }
         match self.get_parent() {
-            None => bail!("Variable ${name} is not defined."),
+            None => bail!("Variable '{name}' is not defined."),
             Some(p) => p.get_variable(name),
         }
     }
@@ -72,10 +74,10 @@ pub struct ExprEval<'func> {
 }
 
 impl<'a> ExprEval<'a> {
-    pub fn new(func_scope: &'a FuncScope, input: Value) -> Self {
+    pub fn new(func_scope: &'a FuncScope, input: Value, var_scope: Arc<VarScope>) -> Self {
         Self {
             input,
-            variables: VarScope::new().into(),
+            variables: var_scope.into(),
             func_scope,
         }
     }
@@ -84,7 +86,13 @@ impl<'a> ExprEval<'a> {
         'a: 'expr,
     {
         if let Some(f) = self.func_scope.get_func_ref(name, args.len()) {
-            let gen = f.bind(&self.func_scope, FuncArgs::from(args)).unwrap();
+            let gen = f
+                .bind(
+                    self.func_scope,
+                    FuncArgs::from(args),
+                    self.variables.borrow().clone(),
+                )
+                .unwrap();
             let ret = JqFunc {
                 fun: Box::new(move |val: &Value| gen.apply(val)),
             };
@@ -106,9 +114,10 @@ impl<'a> ExprEval<'a> {
             }),
             ("select", 1) => {
                 let arg = args[0];
+                let arg_scope = self.variables.borrow().clone();
                 Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
-                        let eval = ExprEval::new(self.func_scope, val.clone());
+                        let eval = ExprEval::new(self.func_scope, val.clone(), arg_scope);
                         let vals = arg.accept(&eval)?;
                         let mut ret = SmallVec::new();
                         for bool in vals.iter().map(|v| v.is_truthy()) {
@@ -122,10 +131,11 @@ impl<'a> ExprEval<'a> {
             }
             ("map", 1) => {
                 let filter = args[0];
+                let arg_scope = self.variables.borrow().clone();
                 Ok(JqFunc {
                     fun: Box::new(|val: &Value| {
                         let mut ret = Vec::new();
-                        let mut eval = ExprEval::new(self.func_scope, Value::Null);
+                        let mut eval = ExprEval::new(self.func_scope, Value::Null, arg_scope);
                         for v in val.iterate()? {
                             eval.input = v.clone();
                             let vals = filter.accept(&eval)?;
@@ -339,12 +349,13 @@ mod test {
     fn test_scope_fail() {
         let filter = "(3 as $a | $a) | $a";
         let err = eval_expr(filter, Value::Null).unwrap_err();
-        assert_eq!(&err.to_string(), "Variable $a is not defined.")
+        assert_eq!(&err.to_string(), "Variable 'a' is not defined.")
     }
 
     fn eval_expr(filter: &str, input: Value) -> ExprResult {
         let scope = FuncScope::default();
-        let eval = ExprEval::new(&scope, input);
+        let var_scope = VarScope::new();
+        let eval = ExprEval::new(&scope, input, var_scope);
         let ast = parse_filter(filter).unwrap();
         ast.accept(&eval)
     }

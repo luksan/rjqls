@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use bpaf::{Bpaf, Parser};
 use serde_json::Value;
+use tracing::Level;
 
 use rjqls::interpreter::AstInterpreter;
 
@@ -150,6 +151,11 @@ fn build_input_value_iterator(
 
 fn main() -> Result<()> {
     let opts = opts().run();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::TRACE)
+        .without_time()
+        .init();
+
     let (copts, filter_str, input_files) = opts.get_common_filter_and_files()?;
     let mut prog = AstInterpreter::new(&filter_str)?;
     let inputs = build_input_value_iterator(&copts, input_files);

@@ -3,6 +3,7 @@ use std::iter;
 
 use anyhow::{bail, Result};
 use serde_json::{Map, Value};
+use tracing::{instrument, trace};
 
 use crate::interpreter::ast_eval::{ExprValue, VarScope};
 use crate::parser::expr_ast::{Expr, ExprVisitor};
@@ -18,6 +19,7 @@ pub struct BindVars<'v, 'r> {
 type ValIter<'v> = Box<dyn Iterator<Item = &'v Value> + 'v>;
 
 impl<'v, 'r> BindVars<'v, 'r> {
+    #[instrument(skip(scope))]
     pub fn bind(values: &'v Value, pattern: &Expr, scope: &'r VarScope) -> Result<()> {
         let this = Self {
             scope,
@@ -102,7 +104,9 @@ impl ExprVisitor<Result<()>> for BindVars<'_, '_> {
     }
 
     fn visit_variable(&self, name: &str) -> VisitorRet {
-        self.scope.set_variable(name, self.expect_value());
+        let value = self.expect_value();
+        trace!("Binding '{name}' to {value:?}");
+        self.scope.set_variable(name, value);
         Ok(())
     }
 }
