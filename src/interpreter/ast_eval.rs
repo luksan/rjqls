@@ -109,42 +109,12 @@ impl<'a> ExprEval<'a> {
                     expr_val_from_value(sum)
                 }),
             }),
+            ("empty", 0) => Ok(JqFunc {
+                fun: Box::new(|_val| Ok(Default::default())),
+            }),
             ("length", 0) => Ok(JqFunc {
                 fun: Box::new(|val: &Value| expr_val_from_value(val.length()?)),
             }),
-            ("select", 1) => {
-                let arg = args[0];
-                let arg_scope = self.variables.borrow().clone();
-                Ok(JqFunc {
-                    fun: Box::new(|val: &Value| {
-                        let eval = ExprEval::new(self.func_scope, val.clone(), arg_scope);
-                        let vals = arg.accept(&eval)?;
-                        let mut ret = SmallVec::new();
-                        for bool in vals.iter().map(|v| v.is_truthy()) {
-                            if bool {
-                                ret.push(val.clone());
-                            }
-                        }
-                        Ok(ret)
-                    }),
-                })
-            }
-            ("map", 1) => {
-                let filter = args[0];
-                let arg_scope = self.variables.borrow().clone();
-                Ok(JqFunc {
-                    fun: Box::new(|val: &Value| {
-                        let mut ret = Vec::new();
-                        let mut eval = ExprEval::new(self.func_scope, Value::Null, arg_scope);
-                        for v in val.iterate()? {
-                            eval.input = v.clone();
-                            let vals = filter.accept(&eval)?;
-                            ret.extend(vals.into_iter());
-                        }
-                        expr_val_from_value(Value::Array(ret))
-                    }),
-                })
-            }
 
             (_, len) => bail!("Function {name}/{len} not found."),
         }

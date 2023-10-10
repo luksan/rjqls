@@ -260,7 +260,7 @@ impl AstInterpreter {
 mod test {
     use serde_json::to_value;
 
-    use crate::interpreter::AstInterpreter;
+    use super::*;
 
     #[test]
     fn test_interpret_fn() {
@@ -278,5 +278,14 @@ mod test {
 
         let x = intr.eval_input(to_value(1).unwrap()).unwrap();
         assert_eq!(x[0], to_value([4.0, 5.0, 6.0]).unwrap())
+    }
+
+    #[test]
+    fn test_eval() {
+        let prog = ".[] | select(.==3)";
+        let input: Value = serde_json::from_str("[1,2,3]").unwrap();
+        let mut i = AstInterpreter::new(prog).unwrap();
+        let v = i.eval_input(input).unwrap();
+        assert_eq!(v[0], to_value(3).unwrap())
     }
 }

@@ -57,6 +57,7 @@ pub enum Expr {
 
 impl Expr {
     #[instrument(name = "A", level = "trace", skip_all)]
+    #[allow(unused_variables)] // FIXME remove
     pub fn accept<R>(&self, visitor: &(impl ExprVisitor<R> + ?Sized)) -> R {
         trace!("Visiting {self:?}");
         match self {
