@@ -48,8 +48,11 @@ pub enum Expr {
     ObjectEntry { key: Ast, value: Ast },
     ObjMember(String), // select object member
     Pipe(Ast, Ast),
+    Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
     Variable(String),
+    Label(String),
+    Break(String),
 }
 
 impl Expr {
@@ -60,17 +63,20 @@ impl Expr {
             Expr::Array(r) => visitor.visit_array(r),
             Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
+            Expr::Break(name) => unimplemented!(),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
             Expr::Dot => visitor.visit_dot(),
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref().map(|ast| &**ast)),
+            Expr::Label(name) => unimplemented!(),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
             Expr::ObjectEntry { key, value } => visitor.visit_obj_entry(key, value),
             Expr::ObjMember(k) => visitor.visit_obj_member(k),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
+            Expr::Reduce(input, var, init, update) => unimplemented!(),
             Expr::Scope(s) => visitor.visit_scope(s),
             Expr::Variable(s) => visitor.visit_variable(s),
         }

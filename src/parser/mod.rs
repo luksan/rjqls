@@ -77,8 +77,8 @@ pub fn parse_module(code: &str) -> Result<JqModule> {
                 let f = parse_func_def(p);
                 functions.push(f);
             }
-
-            _ => unreachable!("Missing rule in module parser"),
+            Rule::EOI => break,
+            _ => unreachable!("Missing rule '{p:?}' in module parser"),
         }
     }
     Ok(JqModule { functions })

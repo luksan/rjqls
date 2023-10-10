@@ -250,11 +250,9 @@ impl AstInterpreter {
     }
 
     fn load_builtins() -> Result<JqModule> {
-        let code = std::fs::read_to_string("src/builtins/builtin.jq")?;
-        // parse_module(&code) // TODO implement the complete Jq language
-        Ok(JqModule {
-            functions: Default::default(),
-        })
+        // let code = std::fs::read_to_string("src/builtins/builtin.jq")?;
+        let code = include_str!("../builtins/rjqls_builtins.jq");
+        parse_module(&code) // TODO implement the complete Jq language
     }
 }
 

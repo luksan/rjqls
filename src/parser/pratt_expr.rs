@@ -17,11 +17,16 @@ fn build_pratt_parser() -> PrattParser<Rule> {
             Op::infix(Rule::pipe, Assoc::Left) | // pipe and comma have the same precedence
             Op::infix(Rule::comma, Assoc::Left),
         )
-        .op(Op::infix(Rule::as_, Assoc::Left))
-        .op(Op::infix(Rule::eq, Assoc::Left) | // fmt
-            Op::infix(Rule::neq, Assoc::Left)| Op::infix(Rule::ord, Assoc::Left))
+        .op(Op::infix(Rule::upd_assign, Assoc::Left) // fmt
+            | Op::infix(Rule::assign, Assoc::Left))
+        .op(Op::infix(Rule::or, Assoc::Left))
+        .op(Op::infix(Rule::and, Assoc::Left))
+        .op(Op::infix(Rule::eq, Assoc::Left)
+            | Op::infix(Rule::neq, Assoc::Left)
+            | Op::infix(Rule::ord, Assoc::Left))
         .op(Op::infix(Rule::add, Assoc::Left) // fmt
             | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::as_, Assoc::Left)) // https://github.com/jqlang/jq/issues/2446
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
         .op(Op::postfix(Rule::arr_idx)
             | Op::postfix(Rule::iterate)
@@ -112,11 +117,15 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
         let x = pair.into_inner();
         pratt_parser(x)
     }
+    fn next_expr(pairs: &mut Pairs<Rule>) -> Ast {
+        pratt_parser(pairs.next().unwrap().into_inner())
+    }
 
     pratt
         .map_primary(|p| {
             Ast::new(match p.as_rule() {
                 Rule::arr => Expr::Array(vec_from_commas(parse_inner_expr(p))),
+                Rule::break_ => Expr::Break(p.inner_string(2)),
                 Rule::call => {
                     let mut x = p.into_inner();
                     let ident = x.next().unwrap().inner_string(0);
@@ -131,10 +140,19 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::ident => Expr::Ident(p.inner_string(0)),
                 Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
                 Rule::if_cond => parse_if_expr(p),
+                Rule::label => Expr::Label(p.inner_string(2)),
                 Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(vec_from_commas(parse_object(p))),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
                 Rule::primary_group => Expr::Scope(parse_inner_expr(p)),
+                Rule::reduce => {
+                    let x = &mut p.into_inner();
+                    let input = next_expr(x);
+                    let iter_var = x.next().unwrap().inner_string(1);
+                    let init = next_expr(x);
+                    let update = next_expr(x);
+                    Expr::Reduce(input, iter_var, init, update)
+                }
                 Rule::string => Expr::Literal(Value::String(p.inner_string(0))),
                 Rule::var_primary => Expr::Variable(p.inner_string(2)),
                 r => panic!("primary {r:?}"),
@@ -279,6 +297,7 @@ mod test_parser {
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
             [if_else, "if . then 3 elif 3>4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
+            [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
         ];
     }
 

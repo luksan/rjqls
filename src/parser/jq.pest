@@ -12,7 +12,7 @@ program = { SOI ~ (func_def* ~ pratt_expr) ~ ("," ~ func_def* ~ pratt_expr)* ~EO
 func_def = {
     "def" ~ ident ~
     ( "("~ (ident | variable) ~ (";" ~ (ident |variable))*  ~")" )?
-    ~ ":" ~ pratt_expr ~ ";"
+    ~ ":" ~ func_def* ~ pratt_expr ~ ";"
 }
 
 jq_module = { SOI ~ (func_def | module_directive)* ~ EOI }
@@ -32,7 +32,7 @@ bool = { "true" | "false" }
 literal = { number | bool | string | null }
 
 ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  (ASCII_ALPHA|"_") ~ ( ASCII_ALPHANUMERIC | "_" )* }
-keywords = { "as"|"if"|"then"|"else"|"elif"|"while"|"end" }
+keywords = { "and"|"as"|"break"|"catch"|"foreach"|"if"|"then"|"else"|"elif"|"end"|"label"|"or"|"reduce"|"try" }
 
 obj = {
     "{" ~ "}" |
@@ -42,7 +42,7 @@ obj = {
 obj_pair = { obj_key ~ colon ~ obj_val }
 obj_key = { ident | string | variable | ("(" ~ pratt_expr ~ ")") }
 obj_val = { primary ~ postfix * | "(" ~ pratt_expr ~ ")" }
-arr = {"[" ~ pratt_expr ~ "]"}
+arr = {"[" ~ pratt_expr? ~ "]"}
 colon = { ":" }
 
 variable = ${ "$" ~ ident }
@@ -51,7 +51,8 @@ variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{"
 
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
-  infix = _{ ord | eq | neq | add | sub| mul | div | comma | pipe | as_ }
+  infix = _{ arith_assign | upd_assign| alt | and | or | ord | eq | neq | assign|add | sub| mul | div | comma | pipe | as_ }
+    alt = {"//"}
     eq = { "==" }
     neq = { "!=" }
     add = { "+" }
@@ -59,19 +60,31 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     mul = { "*" }
     div = { "/" }
     ord = { "<=" | ">=" | "<"| ">"}
+    and = {"and"}
+    or = {"or"}
+    upd_assign = {"|="}
+    assign = {"="}
+    arith_assign = {"//="|"+="| "-="| "*="| "/="| "%=" }
     comma = { "," }
     pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
   prefix = _{ "###" }
-  postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx }
+  postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx|try }
     iterate = { "[" ~ "]" }
-    slice = { "[" ~ number? ~ colon ~ number? ~ "]" }
+    slice = { "[" ~ pratt_expr? ~ colon ~ pratt_expr? ~ "]" }
     arr_idx = {"["  ~ pratt_expr ~"]"}
     ident_idx = { ident }
     string_idx = { string }
+    try = {"?"}
   primary = _{
     obj |
     if_cond |
+    label |
+    break_ |
+    foreach|
+    reduce |
+    try_catch|
+    not|
     dot_primary |
     call |
     literal |
@@ -81,12 +94,19 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     primary_group
   }
     dot_primary = { "." }
-    call = { ident ~ "(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")" }
+    call = { ident ~ "(" ~ call_arg ~ (";" ~ call_arg)* ~ ")" }
+    call_arg = {func_def* ~ pratt_expr}
     ident_primary = { ident }
     var_primary = { variable }
     primary_group = { "(" ~ pratt_expr ~ ")" }
     if_cond = { "if" ~ pratt_expr ~ "then" ~ pratt_expr ~ elif* ~ else_? ~ "end" }
     elif = {"elif" ~ pratt_expr ~ "then" ~ pratt_expr}
     else_ = {"else" ~ pratt_expr}
+    not = {"not"}
+    label = {"label" ~ variable}
+    break_ = {"break"~ variable}
+    foreach = {"foreach" ~ pratt_expr ~"as"~variable ~ "(" ~ pratt_expr~";"~pratt_expr~";"~pratt_expr~")"}
+    reduce = {"reduce" ~ pratt_expr ~ "as" ~ variable ~ "(" ~ pratt_expr ~ ";" ~ pratt_expr ~ ")"}
+    try_catch = {"try" ~pratt_expr ~ ("catch" ~ pratt_expr)?}
 
 
