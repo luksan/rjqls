@@ -83,7 +83,7 @@ pub enum Expr {
 impl Expr {
     #[instrument(name = "A", level = "trace", skip_all)]
     #[allow(unused_variables)] // FIXME remove
-    pub fn accept<R>(&self, visitor: &(impl ExprVisitor<Ret = R> + ?Sized)) -> R {
+    pub fn accept<R>(&self, visitor: &(impl ExprVisitor<R> + ?Sized)) -> R {
         trace!("Visiting {self:?}");
         match self {
             Expr::Array(r) => visitor.visit_array(r),
@@ -119,94 +119,92 @@ impl Display for Expr {
 }
 
 #[allow(unused_variables)]
-pub trait ExprVisitor {
-    type Ret;
+pub trait ExprVisitor<R> {
+    fn default(&self) -> R;
 
-    fn default(&self) -> Self::Ret;
-
-    fn visit_array(&self, elements: &[Expr]) -> Self::Ret {
+    fn visit_array(&self, elements: &[Expr]) -> R {
         for e in elements {
             e.accept(self);
         }
         self.default()
     }
 
-    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> Self::Ret {
+    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> R {
         vals.accept(self);
         vars.accept(self);
         self.default()
     }
 
-    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> Self::Ret {
+    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_call(&self, name: &str, args: &[Expr]) -> Self::Ret {
+    fn visit_call(&self, name: &str, args: &[Expr]) -> R {
         for a in args {
             a.accept(self);
         }
         self.default()
     }
-    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> Self::Ret {
+    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> Self::Ret {
+    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> R {
         rhs.accept(self);
         self.default()
     }
-    fn visit_dot(&self) -> Self::Ret {
+    fn visit_dot(&self) -> R {
         self.default()
     }
-    fn visit_ident(&self, ident: &str) -> Self::Ret {
+    fn visit_ident(&self, ident: &str) -> R {
         self.default()
     }
-    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> Self::Ret {
+    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> R {
         for x in cond.iter().chain(branches.iter()) {
             x.accept(self);
         }
         self.default()
     }
-    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> Self::Ret {
+    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> R {
         expr.accept(self);
         idx.map(|idx| idx.accept(self));
         self.default()
     }
-    fn visit_literal(&self, lit: &Value) -> Self::Ret {
+    fn visit_literal(&self, lit: &Value) -> R {
         self.default()
     }
-    fn visit_object(&self, members: &[Expr]) -> Self::Ret {
+    fn visit_object(&self, members: &[Expr]) -> R {
         for e in members {
             e.accept(self);
         }
         self.default()
     }
-    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> Self::Ret {
+    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> R {
         key.accept(self);
         value.accept(self);
         self.default()
     }
-    fn visit_obj_member(&self, key: &str) -> Self::Ret {
+    fn visit_obj_member(&self, key: &str) -> R {
         self.default()
     }
-    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> Self::Ret {
+    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_scope(&self, inner: &Expr) -> Self::Ret {
+    fn visit_scope(&self, inner: &Expr) -> R {
         inner.accept(self);
         self.default()
     }
-    fn visit_string_interp(&self, parts: &[Expr]) -> Self::Ret {
+    fn visit_string_interp(&self, parts: &[Expr]) -> R {
         for p in parts {
             p.accept(self);
         }
         self.default()
     }
-    fn visit_variable(&self, name: &str) -> Self::Ret {
+    fn visit_variable(&self, name: &str) -> R {
         self.default()
     }
 }
@@ -241,8 +239,7 @@ impl ExprPrinter {
 }
 
 #[allow(clippy::unused_unit)]
-impl ExprVisitor for ExprPrinter {
-    type Ret = ();
+impl ExprVisitor<()> for ExprPrinter {
     fn default(&self) -> () {
         todo!()
     }
@@ -373,7 +370,7 @@ impl ExprVisitor for ExprPrinter {
         self.putc(')');
     }
 
-    fn visit_string_interp(&self, parts: &[Expr]) -> Self::Ret {
+    fn visit_string_interp(&self, parts: &[Expr]) -> () {
         self.putc('"');
         for part in parts {
             if let Expr::Literal(Value::String(s)) = part {

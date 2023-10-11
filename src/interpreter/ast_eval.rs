@@ -149,8 +149,7 @@ pub type ExprResult = Result<ExprValue>;
 fn expr_val_from_value(val: Value) -> ExprResult {
     Ok(SmallVec::from_elem(val, 1))
 }
-impl<'f> ExprVisitor for ExprEval<'f> {
-    type Ret = ExprResult;
+impl<'f> ExprVisitor<ExprResult> for ExprEval<'f> {
     fn default(&self) -> ExprResult {
         panic!();
     }
@@ -336,7 +335,7 @@ impl<'f> ExprVisitor for ExprEval<'f> {
         r
     }
 
-    fn visit_string_interp(&self, parts: &[Expr]) -> Self::Ret {
+    fn visit_string_interp(&self, parts: &[Expr]) -> ExprResult {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
             if let Expr::Literal(Value::String(s)) = part {
