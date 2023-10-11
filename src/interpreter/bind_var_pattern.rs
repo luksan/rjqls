@@ -61,7 +61,8 @@ impl<'v, 'r> BindVars<'v, 'r> {
 
 type VisitorRet = Result<()>;
 
-impl ExprVisitor<Result<()>> for BindVars<'_, '_> {
+impl ExprVisitor for BindVars<'_, '_> {
+    type Ret = VisitorRet;
     fn default(&self) -> VisitorRet {
         bail!("Invalid variable binding pattern.");
     }

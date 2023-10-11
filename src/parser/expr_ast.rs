@@ -61,7 +61,7 @@ pub enum Expr {
 impl Expr {
     #[instrument(name = "A", level = "trace", skip_all)]
     #[allow(unused_variables)] // FIXME remove
-    pub fn accept<R>(&self, visitor: &(impl ExprVisitor<R> + ?Sized)) -> R {
+    pub fn accept<R>(&self, visitor: &(impl ExprVisitor<Ret = R> + ?Sized)) -> R {
         trace!("Visiting {self:?}");
         match self {
             Expr::Array(r) => visitor.visit_array(r),
@@ -89,86 +89,88 @@ impl Expr {
 }
 
 #[allow(unused_variables)]
-pub trait ExprVisitor<R> {
-    fn default(&self) -> R;
+pub trait ExprVisitor {
+    type Ret;
 
-    fn visit_array(&self, elements: &[Expr]) -> R {
+    fn default(&self) -> Self::Ret;
+
+    fn visit_array(&self, elements: &[Expr]) -> Self::Ret {
         for e in elements {
             e.accept(self);
         }
         self.default()
     }
 
-    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> R {
+    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> Self::Ret {
         vals.accept(self);
         vars.accept(self);
         self.default()
     }
 
-    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> R {
+    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> Self::Ret {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_call(&self, name: &str, args: &[Expr]) -> R {
+    fn visit_call(&self, name: &str, args: &[Expr]) -> Self::Ret {
         for a in args {
             a.accept(self);
         }
         self.default()
     }
-    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> R {
+    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> Self::Ret {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> R {
+    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> Self::Ret {
         rhs.accept(self);
         self.default()
     }
-    fn visit_dot(&self) -> R {
+    fn visit_dot(&self) -> Self::Ret {
         self.default()
     }
-    fn visit_ident(&self, ident: &str) -> R {
+    fn visit_ident(&self, ident: &str) -> Self::Ret {
         self.default()
     }
-    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> R {
+    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> Self::Ret {
         for x in cond.iter().chain(branches.iter()) {
             x.accept(self);
         }
         self.default()
     }
-    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> R {
+    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> Self::Ret {
         expr.accept(self);
         idx.map(|idx| idx.accept(self));
         self.default()
     }
-    fn visit_literal(&self, lit: &Value) -> R {
+    fn visit_literal(&self, lit: &Value) -> Self::Ret {
         self.default()
     }
-    fn visit_object(&self, members: &[Expr]) -> R {
+    fn visit_object(&self, members: &[Expr]) -> Self::Ret {
         for e in members {
             e.accept(self);
         }
         self.default()
     }
-    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> R {
+    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> Self::Ret {
         key.accept(self);
         value.accept(self);
         self.default()
     }
-    fn visit_obj_member(&self, key: &str) -> R {
+    fn visit_obj_member(&self, key: &str) -> Self::Ret {
         self.default()
     }
-    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> R {
+    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> Self::Ret {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_scope(&self, inner: &Expr) -> R {
+    fn visit_scope(&self, inner: &Expr) -> Self::Ret {
         inner.accept(self);
         self.default()
     }
-    fn visit_variable(&self, name: &str) -> R {
+    fn visit_variable(&self, name: &str) -> Self::Ret {
         self.default()
     }
 }
@@ -198,7 +200,8 @@ impl ExprPrinter {
 }
 
 #[allow(clippy::unused_unit)]
-impl ExprVisitor<()> for ExprPrinter {
+impl ExprVisitor for ExprPrinter {
+    type Ret = ();
     fn default(&self) -> () {
         todo!()
     }

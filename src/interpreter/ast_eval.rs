@@ -149,7 +149,8 @@ pub type ExprResult = Result<ExprValue>;
 fn expr_val_from_value(val: Value) -> ExprResult {
     Ok(SmallVec::from_elem(val, 1))
 }
-impl<'f> ExprVisitor<ExprResult> for ExprEval<'f> {
+impl<'f> ExprVisitor for ExprEval<'f> {
+    type Ret = ExprResult;
     fn default(&self) -> ExprResult {
         panic!();
     }
