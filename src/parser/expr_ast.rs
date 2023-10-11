@@ -75,6 +75,7 @@ pub enum Expr {
     Pipe(Ast, Ast),
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
+    StringInterp(Vec<Expr>),
     Variable(String),
     Label(String),
     Break(String),
@@ -104,6 +105,7 @@ impl Expr {
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
             Expr::Reduce(input, var, init, update) => unimplemented!(),
             Expr::Scope(s) => visitor.visit_scope(s),
+            Expr::StringInterp(parts) => visitor.visit_string_interp(parts.as_slice()),
             Expr::Variable(s) => visitor.visit_variable(s),
         }
     }
@@ -196,6 +198,12 @@ pub trait ExprVisitor {
     }
     fn visit_scope(&self, inner: &Expr) -> Self::Ret {
         inner.accept(self);
+        self.default()
+    }
+    fn visit_string_interp(&self, parts: &[Expr]) -> Self::Ret {
+        for p in parts {
+            p.accept(self);
+        }
         self.default()
     }
     fn visit_variable(&self, name: &str) -> Self::Ret {
@@ -363,6 +371,20 @@ impl ExprVisitor for ExprPrinter {
         self.putc('(');
         inner.accept(self);
         self.putc(')');
+    }
+
+    fn visit_string_interp(&self, parts: &[Expr]) -> Self::Ret {
+        self.putc('"');
+        for part in parts {
+            if let Expr::Literal(Value::String(s)) = part {
+                self.puts(s);
+            } else {
+                self.puts("\\(");
+                part.accept(self);
+                self.putc(')');
+            }
+        }
+        self.putc('"');
     }
 
     fn visit_variable(&self, name: &str) -> () {

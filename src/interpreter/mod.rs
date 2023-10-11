@@ -310,9 +310,24 @@ mod test {
                   let expect: Vec<_> = [$($expect)+].into_iter().map(jval).collect();
                   assert_eq!(&output, &expect);
               }
-            }
+            };
+            ($test_name:ident, $prog:literal, [$($expect:literal),+]) => {
+              #[test]
+              fn $test_name() {
+                  let mut i = AstInterpreter::new($prog).unwrap();
+                  let input = Value::Null;
+                  let output = i.eval_input(input).unwrap();
+                  let expect: Vec<_> = [$($expect),+].into_iter().map(jval).collect();
+                  assert_eq!(&output, &expect);
+              }
+            };
         }
         check_value!(func_prefix, ". | def x: 3; . | x", "null", ["3"]);
+        check_value!(
+            str_interp,
+            r#""x\(1,2)y\(3,4)z" "#,
+            ["\"x1y3z\"", "\"x2y3z\"", "\"x1y4z\"", "\"x2y4z\""]
+        );
     }
 
     #[test]

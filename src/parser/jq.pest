@@ -24,12 +24,13 @@ plusminus = _{"+" | "-" }
 
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT*)? ~ ( ("e"|"E") ~ plusminus? ~ ASCII_DIGIT+)? }
 
-string = ${ "\"" ~ inner_str ~ "\"" }
-inner_str = @{ char* }
+string = ${ "\"" ~ (inner_str | str_interp)* ~ "\"" }
+inner_str = @{ char+ }
+str_interp = { "\\(" ~ pratt_expr ~ ")" }
 
 null = { "null" }
 bool = { "true" | "false" }
-literal = { number | bool | string | null }
+literal = { number | bool | null } // string is parsed separately
 
 ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  (ASCII_ALPHA|"_") ~ ( ASCII_ALPHANUMERIC | "_" )* }
 keywords = { "and"|"as"|"break"|"catch"|"foreach"|"if"|"then"|"else"|"elif"|"end"|"label"|"or"|"reduce"|"try" }
@@ -87,6 +88,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     not|
     dot_primary |
     call |
+    string |
     literal |
     ident_primary |
     var_primary |

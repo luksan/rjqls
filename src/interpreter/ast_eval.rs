@@ -336,6 +336,39 @@ impl<'f> ExprVisitor for ExprEval<'f> {
         r
     }
 
+    fn visit_string_interp(&self, parts: &[Expr]) -> Self::Ret {
+        let mut ret: Vec<String> = vec!["".to_owned()];
+        for part in parts {
+            if let Expr::Literal(Value::String(s)) = part {
+                for r in ret.iter_mut() {
+                    r.push_str(s);
+                }
+            } else {
+                let values = part.accept(self)?;
+                if values.is_empty() {
+                    ret.clear();
+                    return Ok(Default::default());
+                }
+                let prefix = ret.clone();
+                let mut values = values.into_iter();
+                let mut strings = &mut ret[0..];
+                let mut val = values.next().unwrap();
+                loop {
+                    for s in strings {
+                        s.push_str(&val.to_string());
+                    }
+                    let Some(next) = values.next() else { break };
+                    val = next;
+                    let end = ret.len();
+                    ret.extend(prefix.iter().cloned());
+                    strings = &mut ret[end..]
+                }
+            }
+        }
+        let ret = ret.into_iter().map(|s| Value::String(s));
+        Ok(ret.collect())
+    }
+
     fn visit_variable(&self, name: &str) -> ExprResult {
         self.get_variable(name)
     }

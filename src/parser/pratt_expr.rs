@@ -43,7 +43,6 @@ fn parse_literal(pairs: Pair<Rule>) -> Value {
     let literal = pairs.into_inner().next().unwrap();
     match literal.as_rule() {
         Rule::number => Value::Number(str::parse(literal.as_str()).unwrap()),
-        Rule::string => Value::String(literal.into_inner().as_str().to_owned()),
         Rule::bool => Value::Bool(literal.as_str() == "true"),
         Rule::null => Value::Null,
         _ => unreachable!(),
@@ -190,7 +189,28 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                     let update = next_expr(x);
                     Expr::Reduce(input, iter_var, init, update)
                 }
-                Rule::string => Expr::Literal(Value::String(p.inner_string(0))),
+                Rule::string => {
+                    let mut x = p.into_inner();
+                    match x.len() {
+                        0 => Expr::Literal(Value::String("".to_owned())),
+                        1 => {
+                            let s = x.next().unwrap();
+                            Expr::Literal(Value::String(s.inner_string(0)))
+                        }
+                        len => {
+                            let mut parts = Vec::with_capacity(len);
+                            for p in x {
+                                match p.as_rule() {
+                                    Rule::inner_str => parts
+                                        .push(Expr::Literal(Value::String(p.as_str().to_owned()))),
+                                    Rule::str_interp => parts.push(*parse_inner_expr(p)),
+                                    _ => unreachable!(),
+                                }
+                            }
+                            Expr::StringInterp(parts)
+                        }
+                    }
+                }
                 Rule::var_primary => Expr::Variable(p.inner_string(2)),
                 r => panic!("primary {r:?}"),
             })
@@ -318,7 +338,10 @@ mod test_parser {
                 })+
             }}
 
-        check_ast_fmt![[add, "123e-3 + 3", "123e-3 + 3"]];
+        check_ast_fmt![
+            [add, "123e-3 + 3", "123e-3 + 3"]
+            [str_int, r#" "x\(1+2)x" "#, r#""x\(1 + 2)x""#]
+        ];
 
         fn assert_ast_fmt(filter: &str, ref_ast: &str) {
             let ast = parse_pratt_ast(filter).unwrap();
@@ -340,11 +363,12 @@ mod test_parser {
 
         check_ast![
             [dot, ".", "Dot"]
+            [empty_string, "\"\"", "Literal(String(\"\"))"]
             [dot_obj_idx, ".a", "Index(Dot, Some(Ident(\"a\")))"]
             [dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
             [numeric_add,"123e-3 + 3","BinOp(Add, Literal(Number(123e-3)), Literal(Number(3)))"]
             [plain_call, "length", "Call(\"length\", [])"]
-            [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("\"c\"")), value: Literal(Number(6)) }])"#]
+            [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("c")), value: Literal(Number(6)) }])"#]
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
             [var_binding, "3 as $a", "BindVars(Literal(Number(3)), Variable(\"a\"))"]
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
@@ -353,6 +377,7 @@ mod test_parser {
             [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc(Function { name: "y", args: [], filter: Owned(Literal(Number(3))) }, Dot)])"#]
             [if_else, "if . then 3 elif 3>4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
+            [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
         ];
     }
 
