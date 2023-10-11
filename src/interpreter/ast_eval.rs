@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
-use crate::interpreter::FuncCallArgs;
+use crate::interpreter::{FuncCallArgs, Function};
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, Value};
 use crate::value::ValueOps;
 
@@ -67,34 +67,36 @@ impl VarScope {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExprEval<'func> {
+pub struct ExprEval<'f> {
     input: Value,
     variables: RefCell<Arc<VarScope>>,
-    func_scope: &'func FuncScope<'func, 'func>,
+    func_scope: RefCell<Arc<FuncScope<'f>>>,
 }
 
-impl<'a> ExprEval<'a> {
-    pub fn new(func_scope: &'a FuncScope, input: Value, var_scope: Arc<VarScope>) -> Self {
+impl<'f> ExprEval<'f> {
+    pub fn new(func_scope: Arc<FuncScope<'f>>, input: Value, var_scope: Arc<VarScope>) -> Self {
         Self {
             input,
             variables: var_scope.into(),
-            func_scope,
+            func_scope: func_scope.into(),
         }
     }
     fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>>
     where
-        'a: 'expr,
+        'f: 'expr,
     {
-        if let Some(f) = self.func_scope.get_func_ref(name, args.len()) {
-            let gen = f
-                .bind(
-                    self.func_scope,
-                    FuncCallArgs::from(args),
-                    self.variables.borrow().clone(),
-                )
-                .unwrap();
+        let scope = self.func_scope.borrow();
+        let func = scope.get_func(name, args.len());
+        if let Some(func) = func {
+            let func: Arc<Function<'expr>> = func.clone();
+            let args = FuncCallArgs::from(args);
+            let func_scope = scope.clone();
+            let var_scope = self.variables.borrow().clone();
             let ret = JqFunc {
-                fun: Box::new(move |val: &Value| gen.apply(val)),
+                fun: Box::new(move |val: &Value| {
+                    let gen = func.bind(func_scope, args, var_scope).unwrap();
+                    gen.apply(val)
+                }),
             };
             return Ok(ret);
         }
@@ -135,6 +137,10 @@ impl<'a> ExprEval<'a> {
         let outer = vars.get_parent().unwrap().clone();
         *vars = outer;
     }
+    fn enter_func_scope(&self, scope: Arc<FuncScope<'f>>) {
+        let mut s = self.func_scope.borrow_mut();
+        *s = scope;
+    }
 }
 
 pub type ExprValue = SmallVec<[Value; 2]>;
@@ -143,7 +149,7 @@ pub type ExprResult = Result<ExprValue>;
 fn expr_val_from_value(val: Value) -> ExprResult {
     Ok(SmallVec::from_elem(val, 1))
 }
-impl ExprVisitor<ExprResult> for ExprEval<'_> {
+impl<'f> ExprVisitor<ExprResult> for ExprEval<'f> {
     fn default(&self) -> ExprResult {
         panic!();
     }
@@ -201,6 +207,13 @@ impl ExprVisitor<ExprResult> for ExprEval<'_> {
         let mut rhs = rhs.accept(self)?;
         lhs.append(&mut rhs);
         Ok(lhs)
+    }
+
+    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> ExprResult {
+        let mut scope = self.func_scope.borrow().new_inner();
+        scope.push_arc(func.clone());
+        self.enter_func_scope(Arc::new(scope));
+        rhs.accept(self)
     }
 
     fn visit_dot(&self) -> ExprResult {
@@ -311,6 +324,7 @@ impl ExprVisitor<ExprResult> for ExprEval<'_> {
             rhs_eval.input = value;
             ret.append(&mut rhs.accept(&rhs_eval)?);
         }
+        self.enter_func_scope(rhs_eval.func_scope.take());
         Ok(ret)
     }
 
@@ -362,9 +376,9 @@ mod test {
     }
 
     fn eval_expr(filter: &str, input: Value) -> ExprResult {
-        let scope = FuncScope::default();
+        let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
-        let eval = ExprEval::new(&scope, input, var_scope);
+        let eval = ExprEval::new(scope, input, var_scope);
         let ast = parse_filter(filter).unwrap();
         ast.accept(&eval)
     }

@@ -9,7 +9,7 @@ pub use func_scope::FuncScope;
 
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
-use crate::parser::{parse_module, JqModule, Stmt};
+use crate::parser::{parse_module, JqModule};
 use ast_eval::{ExprEval, ExprResult, VarScope};
 
 pub mod ast_eval;
@@ -20,51 +20,67 @@ pub type Arity = usize;
 mod func_scope {
     use std::borrow::Borrow;
     use std::collections::HashMap;
+    use std::fmt::{Debug, Formatter};
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
     use crate::interpreter::{Arity, Function};
 
-    #[derive(Debug, Default)]
-    pub struct FuncScope<'p, 'f> {
-        owned: HashMap<FuncMapKey, Arc<Function<'static>>>,
-        borrowed: HashMap<FuncMapKey, &'f Function<'f>>,
-        parent: Option<&'p FuncScope<'p, 'p>>,
+    #[derive(Default)]
+    pub struct FuncScope<'f> {
+        funcs: HashMap<FuncMapKey, Arc<Function<'f>>>,
+        parent: Option<Arc<FuncScope<'f>>>,
+    }
+    impl Clone for FuncScope<'_> {
+        fn clone(&self) -> Self {
+            let funcs = self.funcs.clone();
+            let parent = self.parent.clone();
+            Self { funcs, parent }
+        }
+    }
+    impl Debug for FuncScope<'_> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            writeln!(f, "== FuncScope ==")?;
+            for (_key, func) in self.funcs.iter() {
+                writeln!(f, "{}/{}", func.name, func.arity())?;
+            }
+            if let Some(p) = self.parent.as_ref() {
+                write!(f, "{p:?}")?;
+            }
+            Ok(())
+        }
     }
 
-    impl<'p, 'f> FuncScope<'p, 'f> {
-        pub fn new_inner<'s, 'fi>(&'s self) -> FuncScope<'s, 'fi>
+    impl<'f> FuncScope<'f> {
+        pub fn new_inner<'fi>(self: &Arc<Self>) -> FuncScope<'fi>
         where
-            's: 'p,
             'f: 'fi,
         {
-            Self {
-                parent: Some(self),
+            FuncScope::<'fi> {
+                parent: Some(self.clone()),
                 ..Default::default()
             }
         }
 
-        pub fn push(&mut self, func: Function<'static>) {
+        pub fn parent(&self) -> Option<&Arc<FuncScope<'f>>> {
+            self.parent.as_ref()
+        }
+
+        pub fn push(&mut self, func: Function<'f>) {
             let name = func.name.clone();
-            self.owned
+            self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
         }
 
-        pub fn push_ref(&mut self, func: &'f Function) {
-            self.borrowed
+        pub fn push_arc(&mut self, func: Arc<Function<'f>>) {
+            self.funcs
                 .insert(FuncMapKey(func.name.clone(), func.arity()), func.clone());
         }
 
-        pub fn get_func_ref(&self, name: &str, arity: Arity) -> Option<&Function> {
-            self.borrowed
+        pub fn get_func(&self, name: &str, arity: Arity) -> Option<&Arc<Function<'f>>> {
+            self.funcs
                 .get(&(name, arity) as &dyn MapKeyT)
-                .copied()
-                .or_else(|| {
-                    self.owned
-                        .get(&(name, arity) as &dyn MapKeyT)
-                        .map(|arc| &**arc)
-                        .or_else(|| self.parent.and_then(|p| p.get_func_ref(name, arity)))
-                })
+                .or_else(|| self.parent.as_ref().and_then(|p| p.get_func(name, arity)))
         }
     }
 
@@ -155,21 +171,28 @@ impl<'e> Function<'e> {
         self.args.len()
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn filter(&self) -> &Expr {
         &self.filter
     }
 
     pub fn bind<'scope>(
-        &'scope self,
-        func_scope: &'scope FuncScope,
+        self: &Arc<Self>,
+        func_scope: Arc<FuncScope<'scope>>,
         arguments: FuncCallArgs<'scope>,
         arg_var_scope: Arc<VarScope>,
-    ) -> Result<Generator<'scope>> {
+    ) -> Result<Generator<'scope>>
+    where
+        'e: 'scope,
+    {
         if self.arity() != arguments.len() {
             bail!("Function called with incorrect number of arguments")
         }
         Ok(Generator {
-            function: self,
+            function: self.clone(),
             func_scope,
             arguments,
             arg_var_scope,
@@ -179,8 +202,8 @@ impl<'e> Function<'e> {
 
 #[derive(Debug)]
 pub struct Generator<'e> {
-    function: &'e Function<'e>,
-    func_scope: &'e FuncScope<'e, 'e>,
+    function: Arc<Function<'e>>,
+    func_scope: Arc<FuncScope<'e>>,
     arguments: SmallVec<[&'e Expr; 5]>,
     arg_var_scope: Arc<VarScope>,
 }
@@ -202,50 +225,39 @@ impl Generator<'_> {
             };
             args.push(func);
         }
-        for func in args.iter() {
-            scope.push_ref(func)
+        for func in args.into_iter() {
+            scope.push(func)
         }
-        scope.push_ref(self.function); // push ourselves to enable recursion
-        let eval = ExprEval::new(&scope, input.clone(), self.arg_var_scope.clone());
+        scope.push_arc(self.function.clone()); // push ourselves to enable recursion
+        let eval = ExprEval::new(Arc::new(scope), input.clone(), self.arg_var_scope.clone());
         self.function.filter.accept(&eval)
     }
 }
 
 #[derive(Debug)]
 pub struct AstInterpreter {
-    func_scope: FuncScope<'static, 'static>,
-    root_filters: Vec<Ast>,
+    func_scope: Arc<FuncScope<'static>>,
+    root_filter: Ast,
 }
 
 impl AstInterpreter {
     pub fn new(code: &str) -> Result<Self> {
         let builtin = Self::load_builtins()?;
-        let mut this = Self {
-            func_scope: builtin.functions,
-            root_filters: Default::default(),
+        let root_filter = parser::parse_program(code)?;
+        let this = Self {
+            func_scope: Arc::new(builtin.functions),
+            root_filter,
         };
-        let stmts = parser::parse_program(code)?;
-        for stmt in stmts {
-            match stmt {
-                Stmt::DefineFunc(f) => {
-                    this.func_scope.push(f);
-                }
-                Stmt::RootFilter(f) => {
-                    this.root_filters.push(f);
-                }
-            }
-        }
         Ok(this)
     }
 
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
         let mut ret = Vec::new();
-        for flt in self.root_filters.iter() {
-            let var_scope = VarScope::new();
-            let eval = ExprEval::new(&self.func_scope, input.clone(), var_scope);
-            let v = flt.accept(&eval)?;
-            ret.extend(v);
-        }
+        let var_scope = VarScope::new();
+        let eval = ExprEval::new(self.func_scope.clone(), input.clone(), var_scope);
+        let v = self.root_filter.accept(&eval)?;
+        ret.extend(v);
+
         Ok(ret)
     }
 
@@ -261,6 +273,11 @@ mod test {
     use serde_json::to_value;
 
     use super::*;
+
+    /// Parse a Value from JSON data
+    fn jval(v: &str) -> Value {
+        serde_json::from_str(v).unwrap()
+    }
 
     #[test]
     fn test_interpret_fn() {
@@ -280,10 +297,28 @@ mod test {
         assert_eq!(x[0], to_value([4.0, 5.0, 6.0]).unwrap())
     }
 
+    mod test_eval {
+        use super::*;
+
+        macro_rules! check_value {
+            ($test_name:ident, $prog:literal, $input:literal, [$($expect:literal),+]) => {
+              #[test]
+              fn $test_name() {
+                  let mut i = AstInterpreter::new($prog).unwrap();
+                  let input = serde_json::from_str($input).unwrap();
+                  let output = i.eval_input(input).unwrap();
+                  let expect: Vec<_> = [$($expect)+].into_iter().map(jval).collect();
+                  assert_eq!(&output, &expect);
+              }
+            }
+        }
+        check_value!(func_prefix, ". | def x: 3; . | x", "null", ["3"]);
+    }
+
     #[test]
     fn test_eval() {
         let prog = ".[] | select(.==3)";
-        let input: Value = serde_json::from_str("[1,2,3]").unwrap();
+        let input = jval("[1,2,3]");
         let mut i = AstInterpreter::new(prog).unwrap();
         let v = i.eval_input(input).unwrap();
         assert_eq!(v[0], to_value(3).unwrap())

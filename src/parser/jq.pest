@@ -68,7 +68,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     comma = { "," }
     pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
-  prefix = _{ "###" }
+  prefix = _{ func_def }
   postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx|try }
     iterate = { "[" ~ "]" }
     slice = { "[" ~ pratt_expr? ~ colon ~ pratt_expr? ~ "]" }
@@ -94,8 +94,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     primary_group
   }
     dot_primary = { "." }
-    call = { ident ~ "(" ~ call_arg ~ (";" ~ call_arg)* ~ ")" }
-    call_arg = {func_def* ~ pratt_expr}
+    call = { ident ~ "(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")" }
     ident_primary = { ident }
     var_primary = { variable }
     primary_group = { "(" ~ pratt_expr ~ ")" }

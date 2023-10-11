@@ -1,8 +1,12 @@
+use std::str::FromStr;
+use std::sync::Arc;
+
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use serde_json::Value;
-use std::str::FromStr;
+use smallvec::SmallVec;
 
+use crate::interpreter::Function;
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
 use crate::parser::{PairExt, Rule, PRATT_PARSER};
 
@@ -19,6 +23,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         )
         .op(Op::infix(Rule::upd_assign, Assoc::Left) // fmt
             | Op::infix(Rule::assign, Assoc::Left))
+        .op(Op::prefix(Rule::func_def))
         .op(Op::infix(Rule::or, Assoc::Left))
         .op(Op::infix(Rule::and, Assoc::Left))
         .op(Op::infix(Rule::eq, Assoc::Left)
@@ -110,6 +115,38 @@ fn parse_if_expr(pair: Pair<Rule>) -> Expr {
     Expr::IfElse(cond, branch)
 }
 
+pub fn parse_func_def(p: Pair<Rule>) -> Function<'static> {
+    let mut pairs = p.into_inner();
+    let name = pairs.next().unwrap().as_str().to_owned();
+    let mut args = SmallVec::new();
+    let mut bound_args = Vec::new();
+    loop {
+        let pair = pairs.next().unwrap();
+        match pair.as_rule() {
+            Rule::ident => {
+                let argument = pair.inner_string(0);
+                args.push(argument);
+            }
+            Rule::variable => {
+                let argument = pair.inner_string(1);
+                bound_args.push(Ast::new(Expr::BindVars(
+                    Ast::new(Expr::Call(argument.clone(), Default::default())),
+                    Ast::new(Expr::Variable(argument.clone())),
+                )));
+                args.push(argument);
+            }
+            Rule::pratt_expr => {
+                let mut filter = pratt_parser(pair.into_inner());
+                for binding in bound_args {
+                    filter = Ast::new(Expr::Pipe(binding, filter))
+                }
+                break Function::new(name, args, filter);
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
     let pratt = get_pratt_parser();
 
@@ -177,13 +214,11 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
             };
             Ast::new(expr)
         })
-        .map_prefix(|_op, _expr| {
-            panic!("No prefix rules yet.");
-            /*
+        .map_prefix(|op, expr| {
             Ast::new(match op.as_rule() {
+                Rule::func_def => Expr::DefineFunc(Arc::new(parse_func_def(op)), expr),
                 r => panic!("Missing pratt prefix rule {r:?}"),
             })
-             */
         })
         .map_postfix(|expr, op| {
             Ast::new(match op.as_rule() {
@@ -296,6 +331,7 @@ mod test_parser {
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
+            [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc(Function { name: "y", args: [], filter: Owned(Literal(Number(3))) }, Dot)])"#]
             [if_else, "if . then 3 elif 3>4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
         ];

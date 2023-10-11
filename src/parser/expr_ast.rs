@@ -1,9 +1,12 @@
 use std::cell::RefCell;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::bail;
 pub use serde_json::Value;
 use tracing::{instrument, trace};
+
+use crate::interpreter::Function;
 
 #[derive(Debug, Copy, Clone)]
 pub enum BinOps {
@@ -38,6 +41,7 @@ pub enum Expr {
     BinOp(BinOps, Ast, Ast),
     Call(String, Vec<Expr>),
     Comma(Ast, Ast),
+    DefineFunc(Arc<Function<'static>>, Ast),
     Dot,
     Ident(String),
     // the first vec is conditions, the second is true branches, with else as the last element
@@ -54,7 +58,6 @@ pub enum Expr {
     Label(String),
     Break(String),
 }
-
 impl Expr {
     #[instrument(name = "A", level = "trace", skip_all)]
     #[allow(unused_variables)] // FIXME remove
@@ -67,6 +70,7 @@ impl Expr {
             Expr::Break(name) => unimplemented!(),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
+            Expr::DefineFunc(func, rhs) => visitor.visit_define_function(func, rhs),
             Expr::Dot => visitor.visit_dot(),
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
@@ -114,6 +118,10 @@ pub trait ExprVisitor<R> {
     }
     fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> R {
         lhs.accept(self);
+        rhs.accept(self);
+        self.default()
+    }
+    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> R {
         rhs.accept(self);
         self.default()
     }
@@ -238,6 +246,15 @@ impl ExprVisitor<()> for ExprPrinter {
         lhs.accept(self);
         self.putc(',');
         rhs.accept(self);
+    }
+
+    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> () {
+        self.puts("def ");
+        self.puts(func.name());
+        self.puts(": ");
+        func.filter().accept(self);
+        self.puts("; ");
+        rhs.accept(self)
     }
 
     fn visit_dot(&self) -> () {

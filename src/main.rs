@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use bpaf::{Bpaf, Parser};
 use serde_json::Value;
+use tracing::trace;
 use tracing_subscriber::EnvFilter;
 
 use rjqls::interpreter::AstInterpreter;
@@ -152,9 +153,10 @@ fn build_input_value_iterator(
 fn main() -> Result<()> {
     let opts = opts().run();
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::default())
+        .with_env_filter(EnvFilter::from_default_env())
         .without_time()
         .init();
+    trace!("Tracing is working.");
 
     let (copts, filter_str, input_files) = opts.get_common_filter_and_files()?;
     let mut prog = AstInterpreter::new(&filter_str)?;
