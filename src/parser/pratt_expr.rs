@@ -308,6 +308,25 @@ mod test_parser {
         }
     }
 
+    mod fmt {
+        use super::*;
+        macro_rules! check_ast_fmt {
+            ($([$test_name:ident, $filter:literal, $ast:literal]$(,)?)+) => {
+                $(#[test]
+                fn $test_name() {
+                    assert_ast_fmt($filter, $ast);
+                })+
+            }}
+
+        check_ast_fmt![[add, "123e-3 + 3", "123e-3 + 3"]];
+
+        fn assert_ast_fmt(filter: &str, ref_ast: &str) {
+            let ast = parse_pratt_ast(filter).unwrap();
+            let str_rep = format!("{ast}");
+            assert_eq!(&str_rep, ref_ast);
+        }
+    }
+
     mod ast_checks {
         use super::*;
 

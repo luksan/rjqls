@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -29,6 +30,26 @@ impl FromStr for BinOps {
             ">" => Self::Less,
             _ => bail!("Failed to parse '{s}' as a BinOp"),
         })
+    }
+}
+
+impl BinOps {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BinOps::Add => "+",
+            BinOps::Sub => "-",
+            BinOps::Mul => "*",
+            BinOps::Div => "/",
+            BinOps::Eq => "==",
+            BinOps::NotEq => "!=",
+            BinOps::Less => "<",
+        }
+    }
+}
+
+impl Display for BinOps {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -85,6 +106,13 @@ impl Expr {
             Expr::Scope(s) => visitor.visit_scope(s),
             Expr::Variable(s) => visitor.visit_variable(s),
         }
+    }
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let prnt = ExprPrinter::format(self);
+        write!(f, "{prnt}")
     }
 }
 
@@ -184,10 +212,15 @@ impl ExprPrinter {
             r: Default::default(),
         }
     }
-    pub fn print(expr: &Expr) {
+
+    pub fn format(expr: &Expr) -> String {
         let this = Self::new();
         expr.accept(&this);
-        println!("{}", this.r.borrow())
+        this.r.take()
+    }
+
+    pub fn print(expr: &Expr) {
+        println!("{}", Self::format(expr))
     }
 
     fn putc(&self, c: char) {
@@ -227,7 +260,7 @@ impl ExprVisitor for ExprPrinter {
 
     fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> () {
         lhs.accept(self);
-        self.puts(&format!("{op:?}"));
+        self.puts(&format!(" {op} "));
         rhs.accept(self);
     }
 
