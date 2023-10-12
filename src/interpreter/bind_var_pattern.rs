@@ -5,9 +5,8 @@ use anyhow::{bail, Result};
 use serde_json::{Map, Value};
 use tracing::{instrument, trace};
 
-use crate::interpreter::ast_eval::{ExprValue, VarScope};
+use crate::interpreter::ast_eval::VarScope;
 use crate::parser::expr_ast::{Expr, ExprVisitor};
-use crate::value::ValueOps;
 
 pub struct BindVars<'v, 'r> {
     scope: &'r VarScope,
@@ -48,14 +47,12 @@ impl<'v, 'r> BindVars<'v, 'r> {
         }
     }
 
-    fn expect_value(&self) -> ExprValue {
+    fn expect_value(&self) -> Value {
         self.val_iter
             .borrow_mut()
             .next()
             .unwrap_or(&Value::Null)
             .clone()
-            .to_expr_result()
-            .unwrap()
     }
 }
 

@@ -252,13 +252,11 @@ impl AstInterpreter {
     }
 
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
-        let mut ret = Vec::new();
         let var_scope = VarScope::new();
         let eval = ExprEval::new(self.func_scope.clone(), input.clone(), var_scope);
         let v = self.root_filter.accept(&eval)?;
-        ret.extend(v);
 
-        Ok(ret)
+        v.collect()
     }
 
     fn load_builtins() -> Result<JqModule> {
