@@ -171,11 +171,6 @@ impl<'e> Generator<'e> {
             src: Box::new(self.src.chain(next.src)),
         }
     }
-    fn extend_lifetime(self) -> Generator<'static> {
-        Generator {
-            src: Box::new(self.src.collect::<Vec<_>>().into_iter()),
-        }
-    }
 }
 impl Debug for Generator<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -217,12 +212,12 @@ fn expr_val_from_value(val: Value) -> ExprResult<'static> {
     Ok(val.into())
 }
 
-impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
+impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn default(&self) -> ExprResult<'e> {
         panic!();
     }
 
-    fn visit_array(&self, elements: &[Expr]) -> ExprResult<'e> {
+    fn visit_array(&self, elements: &'e [Expr]) -> ExprResult<'e> {
         let mut ret = Generator::empty();
         for e in elements {
             let v = e.accept(self)?;
@@ -231,7 +226,7 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(Value::Array(ret.collect::<Result<_>>()?))
     }
 
-    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> ExprResult<'e> {
+    fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast) -> ExprResult<'e> {
         let vals = vals.accept(self)?;
         for v in vals {
             // TODO this should bifurcate the execution
@@ -240,7 +235,7 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         self.input.clone().to_expr_result()
     }
 
-    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> ExprResult<'e> {
+    fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let mut ret = Vec::new(); // TODO generator
         for l in lhs {
@@ -263,25 +258,26 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         Ok(Generator::from_iter(ret))
     }
 
-    fn visit_call(&self, name: &str, args: &[Expr]) -> ExprResult<'e> {
+    fn visit_call(&self, name: &str, args: &'e [Expr]) -> ExprResult<'e> {
         let mut arg_vec: SmallVec<[_; 1]> = SmallVec::with_capacity(1);
 
         for a in args {
             arg_vec.push(a);
         }
-        Ok(self
-            .get_function(name, &arg_vec)?
-            .call(&self.input)?
-            .extend_lifetime())
+        Ok(self.get_function(name, &arg_vec)?.call(&self.input)?)
     }
 
-    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> ExprResult<'e> {
+    fn visit_comma(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let rhs = rhs.accept(self)?;
         Ok(lhs.chain(rhs))
     }
 
-    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> ExprResult<'e> {
+    fn visit_define_function(
+        &self,
+        func: &Arc<Function<'static>>,
+        rhs: &'e Expr,
+    ) -> ExprResult<'e> {
         let mut scope = self.func_scope.borrow().new_inner();
         scope.push_arc(func.clone());
         self.enter_func_scope(Arc::new(scope));
@@ -296,13 +292,13 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(Value::String(ident.to_string()))
     }
 
-    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> ExprResult<'e> {
+    fn visit_if_else(&self, cond: &'e [Expr], branches: &'e [Expr]) -> ExprResult<'e> {
         let ret = Default::default();
         fn check_remaining<'g>(
             this: &ExprEval<'g>,
             mut ret: Generator<'g>,
-            cond: &[Expr],
-            branches: &[Expr],
+            cond: &'g [Expr],
+            branches: &'g [Expr],
         ) -> Result<Generator<'g>> {
             if cond.is_empty() {
                 ret = ret.chain(branches[0].accept(this)?);
@@ -323,7 +319,7 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
     }
 
     // array or object index
-    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> ExprResult<'e> {
+    fn visit_index(&self, expr: &'e Expr, idx: Option<&'e Expr>) -> ExprResult<'e> {
         let e = expr
             .accept(self)
             .with_context(|| format!("Eval of expr for indexing failed {expr:?}"))?;
@@ -354,7 +350,7 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(lit.clone())
     }
 
-    fn visit_object(&self, members: &[Expr]) -> ExprResult<'e> {
+    fn visit_object(&self, members: &'e [Expr]) -> ExprResult<'e> {
         let mut objects: Vec<Map<String, Value>> = vec![Map::default()];
         for member in members {
             assert!(matches!(member, Expr::ObjectEntry { .. }));
@@ -385,7 +381,7 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
             .into())
     }
 
-    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> ExprResult<'e> {
+    fn visit_obj_entry(&self, key: &'e Expr, value: &'e Expr) -> ExprResult<'e> {
         let mut key_gen = key.accept(self)?;
         let val = value.accept(self)?;
         let key = key_gen.next().unwrap();
@@ -394,7 +390,7 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         Ok(ret.into())
     }
 
-    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> ExprResult<'e> {
+    fn visit_pipe(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let mut ret = Generator::empty();
         let mut rhs_eval = self.clone();
@@ -406,14 +402,14 @@ impl<'e> ExprVisitor<ExprResult<'e>> for ExprEval<'e> {
         Ok(ret)
     }
 
-    fn visit_scope(&self, inner: &Expr) -> ExprResult<'e> {
+    fn visit_scope(&self, inner: &'e Expr) -> ExprResult<'e> {
         self.begin_scope();
         let r = inner.accept(self);
         self.end_scope();
         r
     }
 
-    fn visit_string_interp(&self, parts: &[Expr]) -> ExprResult<'e> {
+    fn visit_string_interp(&self, parts: &'e [Expr]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
             if let Expr::Literal(Value::String(s)) = part {
@@ -478,21 +474,19 @@ mod test {
     fn test_if_else() {
         let filter = r#"if .[] then "hej" elif .[] == false then "hmm" else 4 end"#;
         let input = serde_json::from_str("[1,false,3]").unwrap();
-        let val = eval_expr(filter, input)
-            .unwrap()
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let val = eval_expr(filter, input).unwrap();
         assert_eq!(
             format!("{val:?}"),
             r#"[String("hej"), Number(4), String("hmm"), Number(4), String("hej")]"#
         )
     }
 
-    fn eval_expr(filter: &str, input: Value) -> ExprResult<'_> {
+    fn eval_expr(filter: &str, input: Value) -> Result<Vec<Value>> {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
         let ast = parse_filter(filter).unwrap();
-        ast.accept(&eval)
+        let rvals = ast.accept(&eval)?.collect();
+        rvals
     }
 }
