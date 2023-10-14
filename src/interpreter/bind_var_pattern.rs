@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::iter;
 
 use anyhow::{bail, Result};
-use serde_json::{Map, Value};
+use serde_json::Map;
 use tracing::{instrument, trace};
 
 use crate::interpreter::ast_eval::VarScope;
 use crate::parser::expr_ast::{Expr, ExprVisitor};
+use crate::value::Value;
 
 pub struct BindVars<'v, 'r> {
     scope: &'r VarScope,

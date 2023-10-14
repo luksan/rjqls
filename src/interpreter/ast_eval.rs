@@ -12,8 +12,8 @@ use smallvec::SmallVec;
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::{FuncCallArgs, Function};
-use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, Value};
-use crate::value::ValueOps;
+use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
+use crate::value::{Value, ValueOps};
 
 struct JqFunc<'expr> {
     fun: Box<dyn FnOnce(&Value) -> ExprResult<'expr> + 'expr>,

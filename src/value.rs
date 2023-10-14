@@ -1,7 +1,10 @@
 use anyhow::{bail, Context, Result};
-use serde_json::{to_value, Number, Value};
+pub use serde_json::{to_value, Number, Value};
+use std::sync::Arc;
 
 use crate::interpreter::ast_eval::ExprResult;
+
+pub type ArcValue = Arc<Value>;
 
 pub trait ValueOps {
     fn add(&self, other: &Self) -> Result<Value>;

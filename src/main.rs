@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use bpaf::{Bpaf, Parser};
-use serde_json::Value;
 use tracing::trace;
 use tracing_subscriber::EnvFilter;
 
 use rjqls::interpreter::AstInterpreter;
+use rjqls::value::Value;
 
 #[derive(Bpaf, Clone, Debug)]
 struct CommonOpts {

@@ -2,7 +2,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use serde_json::Value;
 use smallvec::SmallVec;
 
 pub use func_scope::FuncScope;
@@ -10,6 +9,7 @@ pub use func_scope::FuncScope;
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
 use crate::parser::{parse_module, JqModule};
+use crate::value::Value;
 use ast_eval::{ExprEval, ExprResult, VarScope};
 
 pub mod ast_eval;

@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
-use serde_json::Value;
 use smallvec::SmallVec;
 
 use crate::interpreter::Function;
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
 use crate::parser::{PairExt, Rule, PRATT_PARSER};
+use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
     PRATT_PARSER.get_or_init(build_pratt_parser)

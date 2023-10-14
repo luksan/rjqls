@@ -4,10 +4,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::bail;
-pub use serde_json::Value;
 use tracing::{instrument, trace};
 
 use crate::interpreter::Function;
+use crate::value::Value;
 
 #[derive(Debug, Copy, Clone)]
 pub enum BinOps {
