@@ -184,14 +184,14 @@ impl<'e> Function<'e> {
         func_scope: Arc<FuncScope<'scope>>,
         arguments: FuncCallArgs<'scope>,
         arg_var_scope: Arc<VarScope>,
-    ) -> Result<Generator<'scope>>
+    ) -> Result<BoundFunc<'scope>>
     where
         'e: 'scope,
     {
         if self.arity() != arguments.len() {
             bail!("Function called with incorrect number of arguments")
         }
-        Ok(Generator {
+        Ok(BoundFunc {
             function: self.clone(),
             func_scope,
             arguments,
@@ -201,14 +201,14 @@ impl<'e> Function<'e> {
 }
 
 #[derive(Debug)]
-pub struct Generator<'e> {
+pub struct BoundFunc<'e> {
     function: Arc<Function<'e>>,
     func_scope: Arc<FuncScope<'e>>,
     arguments: SmallVec<[&'e Expr; 5]>,
     arg_var_scope: Arc<VarScope>,
 }
 
-impl Generator<'_> {
+impl BoundFunc<'_> {
     pub fn apply(&self, input: &Value) -> ExprResult {
         let mut scope = self.func_scope.new_inner();
         let mut args = Vec::new();
