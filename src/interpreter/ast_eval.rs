@@ -10,7 +10,7 @@ use serde_json::Map;
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::interpreter::Function;
+use crate::interpreter::{BoundFunc, Function};
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Value, ValueOps};
 
@@ -83,7 +83,7 @@ impl<'f> ExprEval<'f> {
         }
     }
 
-    fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Option<JqFunc<'expr>>
+    fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Option<BoundFunc<'expr>>
     where
         'f: 'expr,
     {
@@ -91,15 +91,8 @@ impl<'f> ExprEval<'f> {
         let func = scope.get_func(name, args.len())?;
         let func: Arc<Function<'expr>> = func.clone();
         let func_scope = scope.clone();
-        let var_scope = self.variables.borrow().clone();
         let name = name.to_string();
-        let ret = JqFunc {
-            fun: Box::new(move |val: &Value| {
-                let gen = func.bind(name, func_scope, args, var_scope).unwrap();
-                let x = Ok(gen.apply(val)?.collect::<Vec<_>>().into());
-                x
-            }),
-        };
+        let ret = func.bind(name, func_scope, args).unwrap();
         Some(ret)
     }
 
@@ -203,8 +196,13 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_call(&self, name: &str, args: &'e [Expr]) -> ExprResult<'e> {
-        if let Some(func) = self.get_function(name, args) {
-            func.call(&self.input)
+        if let Some(bound_func) = self.get_function(name, args) {
+            let eval = ExprEval::new(
+                bound_func.func_scope,
+                self.input.clone(),
+                self.variables.borrow().clone(),
+            );
+            bound_func.function.filter.accept(&eval)
         } else {
             self.get_builtin(name, args)?.call(&self.input)
         }

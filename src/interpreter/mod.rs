@@ -3,13 +3,13 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use smallvec::SmallVec;
 
+use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
 
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
 use crate::parser::{parse_module, JqModule, OwnedFunc};
 use crate::value::Value;
-use ast_eval::{ExprEval, ExprResult, VarScope};
 
 pub mod ast_eval;
 mod bind_var_pattern;
@@ -159,7 +159,6 @@ impl<'e> Function<'e> {
         name: String,
         func_scope: Arc<FuncScope<'scope>>,
         arguments: &'scope [Expr],
-        arg_var_scope: Arc<VarScope>,
     ) -> Result<BoundFunc<'scope>>
     where
         'e: 'scope,
@@ -175,7 +174,6 @@ impl<'e> Function<'e> {
         Ok(BoundFunc {
             function: self.clone(),
             func_scope: Arc::new(func_scope),
-            arg_var_scope,
         })
     }
 }
@@ -184,18 +182,6 @@ impl<'e> Function<'e> {
 pub struct BoundFunc<'e> {
     function: Arc<Function<'e>>,
     func_scope: Arc<FuncScope<'e>>,
-    arg_var_scope: Arc<VarScope>,
-}
-
-impl BoundFunc<'_> {
-    pub fn apply(&self, input: &Value) -> ExprResult {
-        let eval = ExprEval::new(
-            self.func_scope.clone(),
-            input.clone(),
-            self.arg_var_scope.clone(),
-        );
-        self.function.filter.accept(&eval)
-    }
 }
 
 #[derive(Debug)]
