@@ -7,11 +7,10 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{bail, Context, Result};
 use serde_json::Map;
-use smallvec::SmallVec;
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
-use crate::interpreter::{FuncCallArgs, Function};
+use crate::interpreter::Function;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Value, ValueOps};
 
@@ -83,7 +82,7 @@ impl<'f> ExprEval<'f> {
             func_scope: func_scope.into(),
         }
     }
-    fn get_function<'expr>(&self, name: &str, args: &[&'expr Expr]) -> Result<JqFunc<'expr>>
+    fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Result<JqFunc<'expr>>
     where
         'f: 'expr,
     {
@@ -91,7 +90,6 @@ impl<'f> ExprEval<'f> {
         let func = scope.get_func(name, args.len());
         if let Some(func) = func {
             let func: Arc<Function<'expr>> = func.clone();
-            let args = FuncCallArgs::from(args);
             let func_scope = scope.clone();
             let var_scope = self.variables.borrow().clone();
             let name = name.to_string();
@@ -260,12 +258,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_call(&self, name: &str, args: &'e [Expr]) -> ExprResult<'e> {
-        let mut arg_vec: SmallVec<[_; 1]> = SmallVec::with_capacity(1);
-
-        for a in args {
-            arg_vec.push(a);
-        }
-        Ok(self.get_function(name, &arg_vec)?.call(&self.input)?)
+        Ok(self.get_function(name, args)?.call(&self.input)?)
     }
 
     fn visit_comma(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {

@@ -156,7 +156,6 @@ pub struct Function<'e> {
 }
 pub type FuncDefArgs = SmallVec<[String; 5]>;
 pub type FuncRet = Result<Value>;
-pub type FuncCallArgs<'e> = SmallVec<[&'e Expr; 5]>;
 
 impl<'e> Function<'e> {
     pub fn new(args: FuncDefArgs, filter: Ast) -> Function<'static> {
@@ -184,7 +183,7 @@ impl<'e> Function<'e> {
         self: &Arc<Self>,
         name: String,
         func_scope: Arc<FuncScope<'scope>>,
-        arguments: FuncCallArgs<'scope>,
+        arguments: &'scope [Expr],
         arg_var_scope: Arc<VarScope>,
     ) -> Result<BoundFunc<'scope>>
     where
@@ -194,7 +193,7 @@ impl<'e> Function<'e> {
             bail!("Function called with incorrect number of arguments")
         }
         let mut func_scope = func_scope.new_inner();
-        for (name, arg) in self.args.iter().zip(arguments.iter().copied()) {
+        for (name, arg) in self.args.iter().zip(arguments.iter()) {
             func_scope.push(name.clone(), Default::default(), arg);
         }
         func_scope.push_arc(name, self.clone()); // push ourselves to enable recursion
