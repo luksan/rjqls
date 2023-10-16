@@ -14,16 +14,6 @@ use crate::interpreter::{BoundFunc, Function};
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Value, ValueOps};
 
-struct JqFunc<'expr> {
-    fun: Box<dyn FnOnce(&Value) -> ExprResult<'expr> + 'expr>,
-}
-
-impl<'e> JqFunc<'e> {
-    fn call(self, value: &Value) -> ExprResult<'e> {
-        (self.fun)(value)
-    }
-}
-
 #[derive(Debug)]
 pub struct VarScope {
     entries: RwLock<HashMap<String, Value>>,
@@ -96,29 +86,23 @@ impl<'f> ExprEval<'f> {
         Some(ret)
     }
 
-    fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> Result<JqFunc<'expr>>
+    fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> ExprResult<'expr>
     where
         'f: 'expr,
     {
-        match (name, args.len()) {
-            ("add", 0) => Ok(JqFunc {
-                fun: Box::new(|val: &Value| {
-                    let mut sum = Value::Null;
-                    for v in val.iterate()? {
-                        sum = sum.add(v)?;
-                    }
-                    expr_val_from_value(sum)
-                }),
-            }),
-            ("empty", 0) => Ok(JqFunc {
-                fun: Box::new(|_val| Ok(Default::default())),
-            }),
-            ("length", 0) => Ok(JqFunc {
-                fun: Box::new(|val: &Value| expr_val_from_value(val.length()?)),
-            }),
+        Ok(match (name, args.len()) {
+            ("add", 0) => {
+                let mut sum = Value::Null;
+                for v in self.input.iterate()? {
+                    sum = sum.add(v)?;
+                }
+                expr_val_from_value(sum)?
+            }
+            ("empty", 0) => Default::default(),
+            ("length", 0) => expr_val_from_value(self.input.length()?)?,
 
             (_, len) => bail!("Function {name}/{len} not found."),
-        }
+        })
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
@@ -204,7 +188,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             );
             bound_func.function.filter.accept(&eval)
         } else {
-            self.get_builtin(name, args)?.call(&self.input)
+            self.get_builtin(name, args)
         }
     }
 
