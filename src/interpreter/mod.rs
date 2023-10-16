@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
@@ -8,7 +7,7 @@ pub use func_scope::FuncScope;
 
 use crate::parser;
 use crate::parser::expr_ast::{Ast, Expr};
-use crate::parser::{parse_module, JqModule};
+use crate::parser::{parse_module, JqModule, OwnedFunc};
 use crate::value::Value;
 use ast_eval::{ExprEval, ExprResult, VarScope};
 
@@ -133,50 +132,25 @@ mod func_scope {
         }
     }
 }
-#[derive(Debug)]
-enum FCow<'e> {
-    Owned(Ast),
-    Borrowed(&'e Expr),
-}
-
-impl Deref for FCow<'_> {
-    type Target = Expr;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            FCow::Owned(e) => e,
-            FCow::Borrowed(b) => b,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct Function<'e> {
     args: FuncDefArgs,
-    filter: FCow<'e>,
+    filter: &'e Expr,
 }
 pub type FuncDefArgs = SmallVec<[String; 5]>;
 pub type FuncRet = Result<Value>;
 
 impl<'e> Function<'e> {
-    pub fn new(args: FuncDefArgs, filter: Ast) -> Function<'static> {
-        Function {
-            args,
-            filter: FCow::Owned(filter),
-        }
-    }
     pub fn from_expr(args: FuncDefArgs, filter: &'e Expr) -> Function<'e> {
-        Function {
-            args,
-            filter: FCow::Borrowed(filter),
-        }
+        Function { args, filter }
     }
 
     pub fn arity(&self) -> Arity {
         self.args.len()
     }
 
-    pub fn filter(&self) -> &Expr {
+    pub fn filter(&self) -> &'e Expr {
         &self.filter
     }
 
@@ -226,7 +200,7 @@ impl BoundFunc<'_> {
 
 #[derive(Debug)]
 pub struct AstInterpreter {
-    func_scope: Arc<FuncScope<'static>>,
+    builtins: Vec<OwnedFunc>,
     root_filter: Ast,
 }
 
@@ -235,7 +209,7 @@ impl AstInterpreter {
         let builtin = Self::load_builtins()?;
         let root_filter = parser::parse_program(code)?;
         let this = Self {
-            func_scope: Arc::new(builtin.functions),
+            builtins: builtin.functions,
             root_filter,
         };
         Ok(this)
@@ -243,7 +217,12 @@ impl AstInterpreter {
 
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
         let var_scope = VarScope::new();
-        let eval = ExprEval::new(self.func_scope.clone(), input.clone(), var_scope);
+        let mut func_scope = FuncScope::default();
+        for f in self.builtins.iter() {
+            func_scope.push(f.name.clone(), f.args.clone().into(), &f.filter);
+        }
+        let func_scope = Arc::new(func_scope);
+        let eval = ExprEval::new(func_scope.clone(), input.clone(), var_scope);
         let v = self.root_filter.accept(&eval)?;
 
         v.collect()

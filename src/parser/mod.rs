@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -6,7 +6,6 @@ use pest::iterators::Pair;
 use pest::pratt_parser::PrattParser;
 use pest::Parser;
 
-use crate::interpreter::{FuncScope, Function};
 use crate::parser::expr_ast::Ast;
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
 
@@ -53,18 +52,23 @@ pub fn parse_program(prog: &str) -> Result<Ast> {
 }
 
 pub struct JqModule {
-    pub(crate) functions: FuncScope<'static>,
+    pub(crate) functions: Vec<OwnedFunc>,
+}
+#[derive(Debug)]
+pub struct OwnedFunc {
+    pub name: String,
+    pub args: Vec<String>,
+    pub filter: Ast,
 }
 
 pub fn parse_module(code: &str) -> Result<JqModule> {
     let mut pairs = JqGrammar::parse(Rule::jq_module, code)?;
-    let mut functions = FuncScope::default();
+    let mut functions = Vec::new();
     for p in pairs.next().unwrap().into_inner() {
         match p.as_rule() {
             Rule::func_def => {
                 let (name, args, filter) = parse_func_def(p);
-                let f = Function::new(args.into(), filter);
-                functions.push_arc(name, Arc::new(f));
+                functions.push(OwnedFunc { name, args, filter });
             }
             Rule::EOI => break,
             _ => unreachable!("Missing rule '{p:?}' in module parser"),
