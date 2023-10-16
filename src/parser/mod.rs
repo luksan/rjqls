@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 use pest::pratt_parser::PrattParser;
 use pest::Parser;
 
-use crate::interpreter::FuncScope;
+use crate::interpreter::{FuncScope, Function};
 use crate::parser::expr_ast::Ast;
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
 
@@ -62,8 +62,9 @@ pub fn parse_module(code: &str) -> Result<JqModule> {
     for p in pairs.next().unwrap().into_inner() {
         match p.as_rule() {
             Rule::func_def => {
-                let f = parse_func_def(p);
-                functions.push(f);
+                let (name, args, filter) = parse_func_def(p);
+                let f = Function::new(args.into(), filter);
+                functions.push(name, f);
             }
             Rule::EOI => break,
             _ => unreachable!("Missing rule '{p:?}' in module parser"),

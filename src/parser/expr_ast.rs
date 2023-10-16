@@ -1,12 +1,10 @@
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use std::sync::Arc;
 
 use anyhow::bail;
 use tracing::{instrument, trace};
 
-use crate::interpreter::Function;
 use crate::value::Value;
 
 #[derive(Debug, Copy, Clone)]
@@ -62,7 +60,12 @@ pub enum Expr {
     BinOp(BinOps, Ast, Ast),
     Call(String, Vec<Expr>),
     Comma(Ast, Ast),
-    DefineFunc(Arc<Function<'static>>, Ast),
+    DefineFunc {
+        name: String,
+        args: Vec<String>,
+        body: Ast,
+        rhs: Ast,
+    },
     Dot,
     Ident(String),
     // the first vec is conditions, the second is true branches, with else as the last element
@@ -70,7 +73,10 @@ pub enum Expr {
     Index(Ast, Option<Ast>), // [2]
     Literal(Value),
     Object(Vec<Expr>),
-    ObjectEntry { key: Ast, value: Ast },
+    ObjectEntry {
+        key: Ast,
+        value: Ast,
+    },
     ObjMember(String), // select object member
     Pipe(Ast, Ast),
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
@@ -92,7 +98,12 @@ impl Expr {
             Expr::Break(name) => unimplemented!(),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
-            Expr::DefineFunc(func, rhs) => visitor.visit_define_function(func, rhs),
+            Expr::DefineFunc {
+                name,
+                args,
+                body,
+                rhs,
+            } => visitor.visit_define_function(name, args, body, rhs),
             Expr::Dot => visitor.visit_dot(),
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
@@ -151,7 +162,13 @@ pub trait ExprVisitor<'e, R> {
         rhs.accept(self);
         self.default()
     }
-    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &'e Expr) -> R {
+    fn visit_define_function(
+        &self,
+        name: &'e str,
+        args: &'e [String],
+        body: &'e Expr,
+        rhs: &'e Expr,
+    ) -> R {
         rhs.accept(self);
         self.default()
     }
@@ -259,7 +276,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
 
     fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> () {
         vals.accept(self);
-        self.puts("as");
+        self.puts(" as ");
         vars.accept(self);
     }
 
@@ -289,11 +306,20 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_define_function(&self, func: &Arc<Function<'static>>, rhs: &Expr) -> () {
+    fn visit_define_function(&self, name: &str, args: &[String], body: &Expr, rhs: &Expr) -> () {
         self.puts("def ");
-        self.puts(func.name());
+        self.puts(name);
+        if !args.is_empty() {
+            self.putc('(');
+            self.puts(args[0].as_str());
+            args[1..].iter().for_each(|a| {
+                self.puts(", ");
+                self.puts(a.as_str());
+            });
+            self.putc(')');
+        }
         self.puts(": ");
-        func.filter().accept(self);
+        body.accept(self);
         self.puts("; ");
         rhs.accept(self)
     }

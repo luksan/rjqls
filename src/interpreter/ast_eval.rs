@@ -94,9 +94,10 @@ impl<'f> ExprEval<'f> {
             let args = FuncCallArgs::from(args);
             let func_scope = scope.clone();
             let var_scope = self.variables.borrow().clone();
+            let name = name.to_string();
             let ret = JqFunc {
                 fun: Box::new(move |val: &Value| {
-                    let gen = func.bind(func_scope, args, var_scope).unwrap();
+                    let gen = func.bind(name, func_scope, args, var_scope).unwrap();
                     let x = Ok(gen.apply(val)?.collect::<Vec<_>>().into());
                     x
                 }),
@@ -275,11 +276,14 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_define_function(
         &self,
-        func: &Arc<Function<'static>>,
+        name: &str,
+        args: &'e [String],
+        body: &'e Expr,
         rhs: &'e Expr,
     ) -> ExprResult<'e> {
         let mut scope = self.func_scope.borrow().new_inner();
-        scope.push_arc(func.clone());
+        let func = Function::from_expr(args.into(), body);
+        scope.push(name.to_owned(), func);
         self.enter_func_scope(Arc::new(scope));
         rhs.accept(self)
     }

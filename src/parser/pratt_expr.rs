@@ -1,11 +1,8 @@
 use std::str::FromStr;
-use std::sync::Arc;
 
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
-use smallvec::SmallVec;
 
-use crate::interpreter::Function;
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
 use crate::parser::{PairExt, Rule, PRATT_PARSER};
 use crate::value::Value;
@@ -114,10 +111,10 @@ fn parse_if_expr(pair: Pair<Rule>) -> Expr {
     Expr::IfElse(cond, branch)
 }
 
-pub fn parse_func_def(p: Pair<Rule>) -> Function<'static> {
+pub fn parse_func_def(p: Pair<Rule>) -> (String, Vec<String>, Ast) {
     let mut pairs = p.into_inner();
     let name = pairs.next().unwrap().as_str().to_owned();
-    let mut args = SmallVec::new();
+    let mut args = Vec::new();
     let mut bound_args = Vec::new();
     loop {
         let pair = pairs.next().unwrap();
@@ -139,7 +136,7 @@ pub fn parse_func_def(p: Pair<Rule>) -> Function<'static> {
                 for binding in bound_args {
                     filter = Ast::new(Expr::Pipe(binding, filter))
                 }
-                break Function::new(name, args, filter);
+                break (name, args.into(), filter);
             }
             _ => unreachable!(),
         }
@@ -234,9 +231,17 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
             };
             Ast::new(expr)
         })
-        .map_prefix(|op, expr| {
+        .map_prefix(|op, rhs| {
             Ast::new(match op.as_rule() {
-                Rule::func_def => Expr::DefineFunc(Arc::new(parse_func_def(op)), expr),
+                Rule::func_def => {
+                    let (name, args, body) = parse_func_def(op);
+                    Expr::DefineFunc {
+                        name,
+                        args,
+                        body,
+                        rhs,
+                    }
+                }
                 r => panic!("Missing pratt prefix rule {r:?}"),
             })
         })
@@ -341,6 +346,7 @@ mod test_parser {
         check_ast_fmt![
             [add, "123e-3 + 3", "123e-3 + 3"]
             [str_int, r#" "x\(1+2)x" "#, r#""x\(1 + 2)x""#]
+            [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
         ];
 
         fn assert_ast_fmt(filter: &str, ref_ast: &str) {
@@ -374,7 +380,7 @@ mod test_parser {
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
-            [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc(Function { name: "y", args: [], filter: Owned(Literal(Number(3))) }, Dot)])"#]
+            [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc { name: "y", args: [], body: Literal(Number(3)), rhs: Dot }])"#]
             [if_else, "if . then 3 elif 3>4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]

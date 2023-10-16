@@ -41,8 +41,8 @@ mod func_scope {
     impl Debug for FuncScope<'_> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             writeln!(f, "== FuncScope ==")?;
-            for (_key, func) in self.funcs.iter() {
-                writeln!(f, "{}/{}", func.name, func.arity())?;
+            for (key, func) in self.funcs.iter() {
+                writeln!(f, "{}/{}", key.0, func.arity())?;
             }
             if let Some(p) = self.parent.as_ref() {
                 write!(f, "{p:?}")?;
@@ -66,15 +66,14 @@ mod func_scope {
             self.parent.as_ref()
         }
 
-        pub fn push(&mut self, func: Function<'f>) {
-            let name = func.name.clone();
+        pub fn push(&mut self, name: String, func: Function<'f>) {
             self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
         }
 
-        pub fn push_arc(&mut self, func: Arc<Function<'f>>) {
+        pub fn push_arc(&mut self, name: String, func: Arc<Function<'f>>) {
             self.funcs
-                .insert(FuncMapKey(func.name.clone(), func.arity()), func.clone());
+                .insert(FuncMapKey(name, func.arity()), func.clone());
         }
 
         pub fn get_func(&self, name: &str, arity: Arity) -> Option<&Arc<Function<'f>>> {
@@ -150,7 +149,6 @@ impl Deref for FCow<'_> {
 
 #[derive(Debug)]
 pub struct Function<'e> {
-    name: String,
     args: FuncDefArgs,
     filter: FCow<'e>,
 }
@@ -159,20 +157,21 @@ pub type FuncRet = Result<Value>;
 pub type FuncCallArgs<'e> = SmallVec<[&'e Expr; 5]>;
 
 impl<'e> Function<'e> {
-    pub fn new(name: String, args: FuncDefArgs, filter: Ast) -> Function<'static> {
+    pub fn new(args: FuncDefArgs, filter: Ast) -> Function<'static> {
         Function {
-            name,
             args,
             filter: FCow::Owned(filter),
+        }
+    }
+    pub fn from_expr(args: FuncDefArgs, filter: &'e Expr) -> Function<'e> {
+        Function {
+            args,
+            filter: FCow::Borrowed(filter),
         }
     }
 
     pub fn arity(&self) -> Arity {
         self.args.len()
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     pub fn filter(&self) -> &Expr {
@@ -181,6 +180,7 @@ impl<'e> Function<'e> {
 
     pub fn bind<'scope>(
         self: &Arc<Self>,
+        name: String,
         func_scope: Arc<FuncScope<'scope>>,
         arguments: FuncCallArgs<'scope>,
         arg_var_scope: Arc<VarScope>,
@@ -193,6 +193,7 @@ impl<'e> Function<'e> {
         }
         Ok(BoundFunc {
             function: self.clone(),
+            name,
             func_scope,
             arguments,
             arg_var_scope,
@@ -202,6 +203,7 @@ impl<'e> Function<'e> {
 
 #[derive(Debug)]
 pub struct BoundFunc<'e> {
+    name: String,
     function: Arc<Function<'e>>,
     func_scope: Arc<FuncScope<'e>>,
     arguments: SmallVec<[&'e Expr; 5]>,
@@ -219,16 +221,15 @@ impl BoundFunc<'_> {
             .zip(self.arguments.iter().copied())
         {
             let func = Function {
-                name: name.to_owned(),
                 filter: FCow::Borrowed(arg),
                 args: Default::default(),
             };
-            args.push(func);
+            args.push((name, func));
         }
-        for func in args.into_iter() {
-            scope.push(func)
+        for (name, func) in args.into_iter() {
+            scope.push(name.to_string(), func);
         }
-        scope.push_arc(self.function.clone()); // push ourselves to enable recursion
+        scope.push_arc(self.name.clone(), self.function.clone()); // push ourselves to enable recursion
         let eval = ExprEval::new(Arc::new(scope), input.clone(), self.arg_var_scope.clone());
         self.function.filter.accept(&eval)
     }
@@ -321,6 +322,7 @@ mod test {
             };
         }
         check_value!(func_prefix, ". | def x: 3; . | x", "null", ["3"]);
+        check_value!(func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2.0"]);
         check_value!(
             str_interp,
             r#""x\(1,2)y\(3,4)z" "#,
