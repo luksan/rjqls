@@ -82,27 +82,31 @@ impl<'f> ExprEval<'f> {
             func_scope: func_scope.into(),
         }
     }
-    fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Result<JqFunc<'expr>>
+
+    fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Option<JqFunc<'expr>>
     where
         'f: 'expr,
     {
         let scope = self.func_scope.borrow();
-        let func = scope.get_func(name, args.len());
-        if let Some(func) = func {
-            let func: Arc<Function<'expr>> = func.clone();
-            let func_scope = scope.clone();
-            let var_scope = self.variables.borrow().clone();
-            let name = name.to_string();
-            let ret = JqFunc {
-                fun: Box::new(move |val: &Value| {
-                    let gen = func.bind(name, func_scope, args, var_scope).unwrap();
-                    let x = Ok(gen.apply(val)?.collect::<Vec<_>>().into());
-                    x
-                }),
-            };
-            return Ok(ret);
-        }
+        let func = scope.get_func(name, args.len())?;
+        let func: Arc<Function<'expr>> = func.clone();
+        let func_scope = scope.clone();
+        let var_scope = self.variables.borrow().clone();
+        let name = name.to_string();
+        let ret = JqFunc {
+            fun: Box::new(move |val: &Value| {
+                let gen = func.bind(name, func_scope, args, var_scope).unwrap();
+                let x = Ok(gen.apply(val)?.collect::<Vec<_>>().into());
+                x
+            }),
+        };
+        Some(ret)
+    }
 
+    fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> Result<JqFunc<'expr>>
+    where
+        'f: 'expr,
+    {
         match (name, args.len()) {
             ("add", 0) => Ok(JqFunc {
                 fun: Box::new(|val: &Value| {
@@ -199,7 +203,11 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_call(&self, name: &str, args: &'e [Expr]) -> ExprResult<'e> {
-        Ok(self.get_function(name, args)?.call(&self.input)?)
+        if let Some(func) = self.get_function(name, args) {
+            func.call(&self.input)
+        } else {
+            self.get_builtin(name, args)?.call(&self.input)
+        }
     }
 
     fn visit_comma(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {
