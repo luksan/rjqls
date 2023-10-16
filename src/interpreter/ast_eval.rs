@@ -282,8 +282,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         rhs: &'e Expr,
     ) -> ExprResult<'e> {
         let mut scope = self.func_scope.borrow().new_inner();
-        let func = Function::from_expr(args.into(), body);
-        scope.push(name.to_owned(), func);
+        scope.push(name.to_owned(), args.into(), body);
         self.enter_func_scope(Arc::new(scope));
         rhs.accept(self)
     }

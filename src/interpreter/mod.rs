@@ -24,7 +24,8 @@ mod func_scope {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    use crate::interpreter::{Arity, Function};
+    use crate::interpreter::{Arity, FuncDefArgs, Function};
+    use crate::parser::expr_ast::Expr;
 
     #[derive(Default)]
     pub struct FuncScope<'f> {
@@ -66,7 +67,8 @@ mod func_scope {
             self.parent.as_ref()
         }
 
-        pub fn push(&mut self, name: String, func: Function<'f>) {
+        pub fn push(&mut self, name: String, args: FuncDefArgs, filter: &'f Expr) {
+            let func = Function::from_expr(args, filter);
             self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
         }
@@ -213,21 +215,13 @@ pub struct BoundFunc<'e> {
 impl BoundFunc<'_> {
     pub fn apply(&self, input: &Value) -> ExprResult {
         let mut scope = self.func_scope.new_inner();
-        let mut args = Vec::new();
         for (name, arg) in self
             .function
             .args
             .iter()
             .zip(self.arguments.iter().copied())
         {
-            let func = Function {
-                filter: FCow::Borrowed(arg),
-                args: Default::default(),
-            };
-            args.push((name, func));
-        }
-        for (name, func) in args.into_iter() {
-            scope.push(name.to_string(), func);
+            scope.push(name.clone(), Default::default(), arg);
         }
         scope.push_arc(self.name.clone(), self.function.clone()); // push ourselves to enable recursion
         let eval = ExprEval::new(Arc::new(scope), input.clone(), self.arg_var_scope.clone());

@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use anyhow::Result;
@@ -64,7 +64,7 @@ pub fn parse_module(code: &str) -> Result<JqModule> {
             Rule::func_def => {
                 let (name, args, filter) = parse_func_def(p);
                 let f = Function::new(args.into(), filter);
-                functions.push(name, f);
+                functions.push_arc(name, Arc::new(f));
             }
             Rule::EOI => break,
             _ => unreachable!("Missing rule '{p:?}' in module parser"),
