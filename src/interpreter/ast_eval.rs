@@ -10,7 +10,7 @@ use serde_json::Map;
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::interpreter::{BoundFunc, Function};
+use crate::interpreter::BoundFunc;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Value, ValueOps};
 
@@ -79,10 +79,7 @@ impl<'f> ExprEval<'f> {
     {
         let scope = self.func_scope.borrow();
         let func = scope.get_func(name, args.len())?;
-        let func: Arc<Function<'expr>> = func.clone();
-        let func_scope = scope.clone();
-        let name = name.to_string();
-        let ret = func.bind(name, func_scope, args).unwrap();
+        let ret = func.bind(name.to_owned(), scope.clone(), args).unwrap();
         Some(ret)
     }
 
