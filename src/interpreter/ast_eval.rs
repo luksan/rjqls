@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
-use std::iter;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
@@ -10,6 +9,7 @@ use serde_json::Map;
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
+use crate::interpreter::generator::{Generator, ResVal};
 use crate::interpreter::Function;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Value, ValueOps};
@@ -145,67 +145,8 @@ impl<'f> ExprEval<'f> {
     }
 }
 
-pub struct Generator<'e> {
-    src: Box<dyn Iterator<Item = ResVal> + 'e>,
-}
-pub type ResVal = Result<Value>;
-
 pub type ExprValue<'e> = Generator<'e>;
 pub type ExprResult<'e> = Result<ExprValue<'e>>;
-
-impl<'e> Generator<'e> {
-    pub fn from_iter(i: impl IntoIterator<Item = ResVal> + 'e) -> Generator<'e> {
-        Generator {
-            src: Box::new(i.into_iter()),
-        }
-    }
-    pub fn empty() -> Generator<'static> {
-        Generator {
-            src: Box::new(iter::empty()),
-        }
-    }
-    #[must_use]
-    fn chain(self, next: Self) -> Self {
-        Self {
-            src: Box::new(self.src.chain(next.src)),
-        }
-    }
-}
-impl Debug for Generator<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Generator {{..}}")
-    }
-}
-impl Iterator for Generator<'_> {
-    type Item = ResVal;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.src.next()
-    }
-}
-
-impl Default for Generator<'_> {
-    fn default() -> Self {
-        Self::from_iter(iter::empty())
-    }
-}
-impl From<Value> for Generator<'_> {
-    fn from(value: Value) -> Self {
-        Generator::from_iter(iter::once(Ok(value)))
-    }
-}
-
-impl From<ResVal> for Generator<'_> {
-    fn from(value: ResVal) -> Self {
-        Generator::from_iter(iter::once(value))
-    }
-}
-
-impl From<Vec<ResVal>> for Generator<'_> {
-    fn from(value: Vec<ResVal>) -> Self {
-        Generator::from_iter(value)
-    }
-}
 
 fn expr_val_from_value(val: Value) -> ExprResult<'static> {
     Ok(val.into())

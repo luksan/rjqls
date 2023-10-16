@@ -14,6 +14,7 @@ use ast_eval::{ExprEval, ExprResult, VarScope};
 
 pub mod ast_eval;
 mod bind_var_pattern;
+mod generator;
 
 pub type Arity = usize;
 
