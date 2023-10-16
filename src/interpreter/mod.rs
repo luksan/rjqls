@@ -193,11 +193,14 @@ impl<'e> Function<'e> {
         if self.arity() != arguments.len() {
             bail!("Function called with incorrect number of arguments")
         }
+        let mut func_scope = func_scope.new_inner();
+        for (name, arg) in self.args.iter().zip(arguments.iter().copied()) {
+            func_scope.push(name.clone(), Default::default(), arg);
+        }
+        func_scope.push_arc(name, self.clone()); // push ourselves to enable recursion
         Ok(BoundFunc {
             function: self.clone(),
-            name,
-            func_scope,
-            arguments,
+            func_scope: Arc::new(func_scope),
             arg_var_scope,
         })
     }
@@ -205,26 +208,18 @@ impl<'e> Function<'e> {
 
 #[derive(Debug)]
 pub struct BoundFunc<'e> {
-    name: String,
     function: Arc<Function<'e>>,
     func_scope: Arc<FuncScope<'e>>,
-    arguments: SmallVec<[&'e Expr; 5]>,
     arg_var_scope: Arc<VarScope>,
 }
 
 impl BoundFunc<'_> {
     pub fn apply(&self, input: &Value) -> ExprResult {
-        let mut scope = self.func_scope.new_inner();
-        for (name, arg) in self
-            .function
-            .args
-            .iter()
-            .zip(self.arguments.iter().copied())
-        {
-            scope.push(name.clone(), Default::default(), arg);
-        }
-        scope.push_arc(self.name.clone(), self.function.clone()); // push ourselves to enable recursion
-        let eval = ExprEval::new(Arc::new(scope), input.clone(), self.arg_var_scope.clone());
+        let eval = ExprEval::new(
+            self.func_scope.clone(),
+            input.clone(),
+            self.arg_var_scope.clone(),
+        );
         self.function.filter.accept(&eval)
     }
 }
