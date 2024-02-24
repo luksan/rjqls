@@ -5,7 +5,8 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
 use anyhow::{bail, Context, Result};
-use serde_json::Map;
+use onig::{Regex, RegexOptions, Syntax};
+use serde_json::{to_value, Map};
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::func_scope::FuncScope;
@@ -26,7 +27,7 @@ impl VarScope {
             entries: Default::default(),
             parent: None,
         }
-        .into()
+            .into()
     }
 
     fn begin_scope(self: &Arc<Self>) -> Arc<Self> {
@@ -34,7 +35,7 @@ impl VarScope {
             entries: Default::default(),
             parent: Some(self.clone()),
         }
-        .into()
+            .into()
     }
 
     fn get_parent(&self) -> Option<&Arc<Self>> {
@@ -74,8 +75,8 @@ impl<'f> ExprEval<'f> {
     }
 
     fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Option<BoundFunc<'expr>>
-    where
-        'f: 'expr,
+        where
+            'f: 'expr,
     {
         let scope = self.func_scope.borrow();
         let func = scope.get_func(name, args.len())?;
@@ -84,8 +85,9 @@ impl<'f> ExprEval<'f> {
     }
 
     fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> ExprResult<'expr>
-    where
-        'f: 'expr,
+        where
+            'f: 'expr,
+            'expr: 'f
     {
         Ok(match (name, args.len()) {
             ("add", 0) => {
@@ -97,6 +99,64 @@ impl<'f> ExprEval<'f> {
             }
             ("empty", 0) => Default::default(),
             ("length", 0) => expr_val_from_value(self.input.length()?)?,
+
+            // Regex
+            ("match", 1) => {
+                let regex = args[0]
+                    .accept(self)?
+                    .next()
+                    .context("match argument must be a string")??;
+                let regex = match &regex {
+                    Value::String(s) => s.as_str(),
+                    Value::Array(a) => a
+                        .get(0)
+                        .and_then(|s| s.as_str())
+                        .context("match argument must be a a string")?,
+                    _ => bail!("match argument must be a string"),
+                };
+                let input = self.input.as_str().with_context(|| {
+                    format!(
+                        "{} cannot be matched since it is not a string.",
+                        &self.input
+                    )
+                })?;
+                let regex_opts = RegexOptions::REGEX_OPTION_CAPTURE_GROUP;
+                let re = Regex::with_options(regex, regex_opts, Syntax::perl_ng())
+                    .context("Invalid regular expression")?;
+
+                let caps: Vec<_> = re.captures_iter(input).map(|cap| {
+                    let mut obj = Map::new();
+                    let mtch = cap.at(0).unwrap();
+                    obj.insert("offset".to_owned(), cap.offset().into());
+                    obj.insert("length".to_owned(), mtch.len().into());
+                    obj.insert("string".to_owned(), mtch.into());
+                    let mut subs: Vec<_> = cap.iter_pos().skip(1).map(|tuple_opt| {
+                        let mut obj = Map::new();
+                        if let Some((start, end)) = tuple_opt {
+                            let txt = mtch[start..end].to_owned();
+                            let len = txt.len().into();
+                            obj.insert("offset".to_owned(), start.into());
+                            obj.insert("string".to_owned(), txt.into());
+                            obj.insert("length".to_owned(), len);
+                        } else {
+                            obj.insert("offset".to_owned(), to_value(-1).unwrap());
+                            obj.insert("string".to_owned(), Value::Null);
+                            obj.insert("length".to_owned(), 0.into());
+                        }
+                        obj.insert("name".to_owned(), Value::Null);
+                        obj
+                    }).collect();
+
+                    re.foreach_name(|name, pos| {
+                        subs[pos[0] as usize - 1]["name"] = to_value(name).unwrap();
+                        true
+                    });
+
+                    obj.insert("captures".to_owned(), subs.into());
+                    Value::Object(obj)
+                }).collect();
+                Generator::from_iter(caps.into_iter().map(|o| Ok(o)))
+            }
 
             (_, len) => bail!("Function {name}/{len} not found."),
         })
@@ -291,7 +351,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                 for o in obj_slice {
                     o.insert(key.to_string(), val.clone());
                 }
-                let Some(n) = values.next() else { break };
+                let Some(n) = values.next() else { break; };
                 val = n?;
                 let obj_len = objects.len();
                 objects.extend_from_within(0..obj_cnt);
@@ -352,7 +412,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     for s in strings {
                         s.push_str(&val.to_string());
                     }
-                    let Some(next) = values.next() else { break };
+                    let Some(next) = values.next() else { break; };
                     val = next?;
                     let end = ret.len();
                     ret.extend(prefix.iter().cloned());
