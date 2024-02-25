@@ -358,6 +358,10 @@ mod test_parser {
             let ast = parse_pratt_ast(filter).unwrap();
             let str_rep = format!("{ast}");
             assert_eq!(&str_rep, ref_ast);
+            // Check that the AST str rep round-trips
+            let ast = parse_pratt_ast(&str_rep).unwrap();
+            let str_rep = format!("{ast}");
+            assert_eq!(&str_rep, ref_ast);
         }
     }
 
