@@ -82,6 +82,7 @@ pub enum Expr {
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
     StringInterp(Vec<Expr>),
+    TryCatch(Ast, Option<Ast>),
     Variable(String),
     Label(String),
     Break(String),
@@ -117,6 +118,9 @@ impl Expr {
             Expr::Reduce(input, var, init, update) => unimplemented!(),
             Expr::Scope(s) => visitor.visit_scope(s),
             Expr::StringInterp(parts) => visitor.visit_string_interp(parts.as_slice()),
+            Expr::TryCatch(try_expr, catch_expr) => {
+                visitor.visit_try_catch(try_expr, catch_expr.as_deref())
+            }
             Expr::Variable(s) => visitor.visit_variable(s),
         }
     }
@@ -218,6 +222,13 @@ pub trait ExprVisitor<'e, R> {
     fn visit_string_interp(&self, parts: &'e [Expr]) -> R {
         for p in parts {
             p.accept(self);
+        }
+        self.default()
+    }
+    fn visit_try_catch(&self, try_expr: &'e Expr, catch_expr: Option<&'e Expr>) -> R {
+        try_expr.accept(self);
+        if let Some(catch_expr) = catch_expr {
+            catch_expr.accept(self);
         }
         self.default()
     }
@@ -350,11 +361,11 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
 
     fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> () {
         expr.accept(self);
+        self.putc('[');
         if let Some(idx) = idx {
             idx.accept(self)
-        } else {
-            self.puts("[]")
         }
+        self.putc(']');
     }
 
     fn visit_literal(&self, lit: &Value) -> () {
@@ -408,6 +419,15 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
             }
         }
         self.putc('"');
+    }
+
+    fn visit_try_catch(&self, try_expr: &'_ Expr, catch_expr: Option<&'_ Expr>) -> () {
+        self.puts("try ");
+        try_expr.accept(self);
+        if let Some(catch_expr) = catch_expr {
+            self.puts(" catch ");
+            catch_expr.accept(self);
+        }
     }
 
     fn visit_variable(&self, name: &str) -> () {

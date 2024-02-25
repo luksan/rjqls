@@ -34,6 +34,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
             | Op::postfix(Rule::iterate)
             | Op::postfix(Rule::string_idx)
             | Op::postfix(Rule::ident_idx))
+        .op(Op::postfix(Rule::try_postfix))
 }
 
 fn parse_literal(pairs: Pair<Rule>) -> Value {
@@ -208,6 +209,12 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                         }
                     }
                 }
+                Rule::try_catch => {
+                    let mut x = p.into_inner();
+                    let try_expr = parse_inner_expr(x.next().unwrap());
+                    let catch_expr = x.next().map(|catch| parse_inner_expr(catch));
+                    Expr::TryCatch(try_expr, catch_expr)
+                }
                 Rule::var_primary => Expr::Variable(p.inner_string(2)),
                 r => panic!("primary {r:?}"),
             })
@@ -254,6 +261,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                     expr,
                     Some(Ast::new(Expr::Literal(Value::String(op.inner_string(2))))),
                 ),
+                Rule::try_postfix => Expr::TryCatch(expr, None),
                 r => panic!("Missing pratt postfix rule {r:?}"),
             })
         })
@@ -352,6 +360,9 @@ mod test_parser {
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
             [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
+            [try1, "try 1"],
+            [try_catch, "try 1 catch 2"],
+            [try_postfix, "1?", "try 1"],
         ];
 
         fn assert_ast_fmt(filter: &str, ref_ast: &str) {
@@ -399,6 +410,9 @@ mod test_parser {
     fn assert_ast(filter: &str, ref_ast: &str) {
         let ast = parse_pratt_ast(filter).unwrap();
         let str_rep = format!("{ast:?}");
+        if str_rep != ref_ast {
+            println!("{ast:#?}")
+        }
         assert_eq!(&str_rep, ref_ast);
     }
 

@@ -71,13 +71,13 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
   prefix = _{ func_def }
-  postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx|try }
+  postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx | try_postfix }
     iterate = { "[" ~ "]" }
     slice = { "[" ~ pratt_expr? ~ colon ~ pratt_expr? ~ "]" }
     arr_idx = {"["  ~ pratt_expr ~"]"}
     ident_idx = { ident }
     string_idx = { string }
-    try = {"?"}
+    try_postfix = { "?" }
   primary = _{
     obj |
     if_cond |
