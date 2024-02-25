@@ -337,23 +337,21 @@ mod test_parser {
         use super::*;
 
         macro_rules! check_ast_fmt {
-            ($([$test_name:ident, $filter:literal, $ast:literal]$(,)?)+) => {
+            ($([$test_name:ident, $filter:literal$(, $ast:literal)?]$(,)?)+) => {
                 $(#[test]
                 fn $test_name() {
-                    assert_ast_fmt($filter, $ast);
+                    if false {}
+                 $( else if true { assert_ast_fmt($filter, $ast) } )?
+                    else { assert_ast_fmt($filter, $filter) }
                 })+
             }}
 
         check_ast_fmt![
-            [add, "123e-3 + 3", "123e-3 + 3"]
+            [add, "123e-3 + 3"]
             [str_int, r#" "x\(1+2)x" "#, r#""x\(1 + 2)x""#]
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
-            [nested_recurse,
-                "def recurse(f): def r: .,(f|r); r; 1",
-                "def recurse(f): def r: .,(f|r); r; 1"],
-            [nested_funcs,
-                "def o(a): 1,def i1: a; a + i1; o(10)",
-                "def o(a): 1,def i1: a; a + i1; o(10)"]
+            [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
+            [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
         ];
 
         fn assert_ast_fmt(filter: &str, ref_ast: &str) {
