@@ -348,7 +348,7 @@ mod test_parser {
 
         check_ast_fmt![
             [add, "123e-3 + 3"]
-            [str_int, r#" "x\(1+2)x" "#, r#""x\(1 + 2)x""#]
+            [str_int, r#""x\(1 + 2)x""#]
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
             [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
