@@ -3,8 +3,8 @@ use std::str::FromStr;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
+use crate::parser::{PairExt, PRATT_PARSER, Rule};
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
-use crate::parser::{PairExt, Rule, PRATT_PARSER};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -138,7 +138,7 @@ pub fn parse_func_def(p: Pair<Rule>) -> (String, Vec<String>, Ast) {
                 }
                 break (name, args.into(), filter);
             }
-            _ => unreachable!(),
+            node => unreachable!("Unexpected node in parse_func_def: {node:?}"),
         }
     }
 }
@@ -335,6 +335,7 @@ mod test_parser {
 
     mod fmt {
         use super::*;
+
         macro_rules! check_ast_fmt {
             ($([$test_name:ident, $filter:literal, $ast:literal]$(,)?)+) => {
                 $(#[test]
@@ -347,6 +348,12 @@ mod test_parser {
             [add, "123e-3 + 3", "123e-3 + 3"]
             [str_int, r#" "x\(1+2)x" "#, r#""x\(1 + 2)x""#]
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
+            [nested_recurse,
+                "def recurse(f): def r: .,(f|r); r; 1",
+                "def recurse(f): def r: .,(f|r); r; 1"],
+            [nested_funcs,
+                "def o(a): 1,def i1: a; a + i1; o(10)",
+                "def o(a): 1,def i1: a; a + i1; o(10)"]
         ];
 
         fn assert_ast_fmt(filter: &str, ref_ast: &str) {

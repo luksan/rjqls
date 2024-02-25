@@ -7,12 +7,13 @@ char = {
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
-program = { SOI ~ (func_def* ~ pratt_expr) ~ ("," ~ func_def* ~ pratt_expr)* ~EOI }
+program = { SOI ~  pratt_expr ~ ("," ~ pratt_expr)* ~ EOI }
 
+// func_def is a prefix in pratt_expr
 func_def = {
     "def" ~ ident ~
-    ( "("~ (ident | variable) ~ (";" ~ (ident |variable))*  ~")" )?
-    ~ ":" ~ func_def* ~ pratt_expr ~ ";"
+    ( "(" ~ (ident | variable) ~ (";" ~ (ident | variable))*  ~ ")" )?
+    ~ ":" ~ pratt_expr ~ ";"
 }
 
 jq_module = { SOI ~ (func_def | module_directive)* ~ EOI }
