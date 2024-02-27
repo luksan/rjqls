@@ -27,7 +27,7 @@ impl VarScope {
             entries: Default::default(),
             parent: None,
         }
-            .into()
+        .into()
     }
 
     fn begin_scope(self: &Arc<Self>) -> Arc<Self> {
@@ -35,7 +35,7 @@ impl VarScope {
             entries: Default::default(),
             parent: Some(self.clone()),
         }
-            .into()
+        .into()
     }
 
     fn get_parent(&self) -> Option<&Arc<Self>> {
@@ -75,8 +75,8 @@ impl<'f> ExprEval<'f> {
     }
 
     fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Option<BoundFunc<'expr>>
-        where
-            'f: 'expr,
+    where
+        'f: 'expr,
     {
         let scope = self.func_scope.borrow();
         let func = scope.get_func(name, args.len())?;
@@ -85,9 +85,9 @@ impl<'f> ExprEval<'f> {
     }
 
     fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> ExprResult<'expr>
-        where
-            'f: 'expr,
-            'expr: 'f
+    where
+        'f: 'expr,
+        'expr: 'f,
     {
         Ok(match (name, args.len()) {
             ("add", 0) => {
@@ -124,37 +124,44 @@ impl<'f> ExprEval<'f> {
                 let re = Regex::with_options(regex, regex_opts, Syntax::perl_ng())
                     .context("Invalid regular expression")?;
 
-                let caps: Vec<_> = re.captures_iter(input).map(|cap| {
-                    let mut obj = Map::new();
-                    let mtch = cap.at(0).unwrap();
-                    obj.insert("offset".to_owned(), cap.offset().into());
-                    obj.insert("length".to_owned(), mtch.len().into());
-                    obj.insert("string".to_owned(), mtch.into());
-                    let mut subs: Vec<_> = cap.iter_pos().skip(1).map(|tuple_opt| {
+                let caps: Vec<_> = re
+                    .captures_iter(input)
+                    .map(|cap| {
                         let mut obj = Map::new();
-                        if let Some((start, end)) = tuple_opt {
-                            let txt = mtch[start..end].to_owned();
-                            let len = txt.len().into();
-                            obj.insert("offset".to_owned(), start.into());
-                            obj.insert("string".to_owned(), txt.into());
-                            obj.insert("length".to_owned(), len);
-                        } else {
-                            obj.insert("offset".to_owned(), to_value(-1).unwrap());
-                            obj.insert("string".to_owned(), Value::Null);
-                            obj.insert("length".to_owned(), 0.into());
-                        }
-                        obj.insert("name".to_owned(), Value::Null);
-                        obj
-                    }).collect();
+                        let mtch = cap.at(0).unwrap();
+                        obj.insert("offset".to_owned(), cap.offset().into());
+                        obj.insert("length".to_owned(), mtch.len().into());
+                        obj.insert("string".to_owned(), mtch.into());
+                        let mut subs: Vec<_> = cap
+                            .iter_pos()
+                            .skip(1)
+                            .map(|tuple_opt| {
+                                let mut obj = Map::new();
+                                if let Some((start, end)) = tuple_opt {
+                                    let txt = mtch[start..end].to_owned();
+                                    let len = txt.len().into();
+                                    obj.insert("offset".to_owned(), start.into());
+                                    obj.insert("string".to_owned(), txt.into());
+                                    obj.insert("length".to_owned(), len);
+                                } else {
+                                    obj.insert("offset".to_owned(), to_value(-1).unwrap());
+                                    obj.insert("string".to_owned(), Value::Null);
+                                    obj.insert("length".to_owned(), 0.into());
+                                }
+                                obj.insert("name".to_owned(), Value::Null);
+                                obj
+                            })
+                            .collect();
 
-                    re.foreach_name(|name, pos| {
-                        subs[pos[0] as usize - 1]["name"] = to_value(name).unwrap();
-                        true
-                    });
+                        re.foreach_name(|name, pos| {
+                            subs[pos[0] as usize - 1]["name"] = to_value(name).unwrap();
+                            true
+                        });
 
-                    obj.insert("captures".to_owned(), subs.into());
-                    Value::Object(obj)
-                }).collect();
+                        obj.insert("captures".to_owned(), subs.into());
+                        Value::Object(obj)
+                    })
+                    .collect();
                 Generator::from_iter(caps.into_iter().map(|o| Ok(o)))
             }
 
@@ -226,6 +233,8 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     BinOps::Sub => l.sub(r),
                     BinOps::Mul => l.mul(r),
                     BinOps::Div => l.div(r),
+
+                    BinOps::Alt => unimplemented!(),
                     BinOps::Eq => Ok(Value::Bool(l == r)),
                     BinOps::NotEq => Ok(Value::Bool(l != r)),
                     BinOps::Less => Ok(l.less_than(r)),
@@ -351,7 +360,9 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                 for o in obj_slice {
                     o.insert(key.to_string(), val.clone());
                 }
-                let Some(n) = values.next() else { break; };
+                let Some(n) = values.next() else {
+                    break;
+                };
                 val = n?;
                 let obj_len = objects.len();
                 objects.extend_from_within(0..obj_cnt);
@@ -412,7 +423,9 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     for s in strings {
                         s.push_str(&val.to_string());
                     }
-                    let Some(next) = values.next() else { break; };
+                    let Some(next) = values.next() else {
+                        break;
+                    };
                     val = next?;
                     let end = ret.len();
                     ret.extend(prefix.iter().cloned());

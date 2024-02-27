@@ -19,6 +19,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
             Op::infix(Rule::comma, Assoc::Left) |
             Op::infix(Rule::idx_chain_pipe, Assoc::Left), // virtual pipe in index chain
         )
+        .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left) // fmt
             | Op::infix(Rule::assign, Assoc::Left))
         .op(Op::prefix(Rule::func_def))
@@ -218,18 +219,25 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
             })
         })
         .map_infix(|lhs, op, rhs| {
+            macro_rules! binop {
+                ($binop:ident) => {
+                    Expr::BinOp(BinOps::$binop, lhs, rhs)
+                };
+            }
             let expr = match op.as_rule() {
-                Rule::add => Expr::BinOp(BinOps::Add, lhs, rhs),
-                Rule::sub => Expr::BinOp(BinOps::Sub, lhs, rhs),
-                Rule::mul => Expr::BinOp(BinOps::Mul, lhs, rhs),
-                Rule::div => Expr::BinOp(BinOps::Div, lhs, rhs),
+                Rule::add => binop!(Add),
+                Rule::sub => binop!(Sub),
+                Rule::mul => binop!(Mul),
+                Rule::div => binop!(Div),
 
+                Rule::alt => binop!(Alt),
                 Rule::as_ => Expr::BindVars(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
-                Rule::eq => Expr::BinOp(BinOps::Eq, lhs, rhs),
-                Rule::neq => Expr::BinOp(BinOps::NotEq, lhs, rhs),
+                Rule::eq => binop!(Eq),
+                Rule::neq => binop!(NotEq),
                 Rule::ord => Expr::BinOp(BinOps::from_str(op.as_str()).unwrap(), lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
+                Rule::upd_assign => Expr::Dot, // FIXME
                 r => {
                     panic!("Missing pratt infix rule {r:?}")
                 }
@@ -354,6 +362,8 @@ mod test_parser {
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
             [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
+
+            [binop_alt, "false // 1"]
             [try1, "try 1"],
             [try_catch, "try 1 catch 2"],
             [try_postfix, "1?", "try 1"],

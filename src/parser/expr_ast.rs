@@ -14,6 +14,8 @@ pub enum BinOps {
     Mul,
     Div,
 
+    Alt,
+
     Eq,
     NotEq,
 
@@ -38,6 +40,7 @@ impl BinOps {
             BinOps::Sub => "-",
             BinOps::Mul => "*",
             BinOps::Div => "/",
+            BinOps::Alt => "//",
             BinOps::Eq => "==",
             BinOps::NotEq => "!=",
             BinOps::Less => "<",
