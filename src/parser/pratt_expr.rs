@@ -396,6 +396,8 @@ mod test_parser {
             [idx_brkt_string, r#".["a"]"#, r#"Index(Dot, Some(Literal(String("a"))))"#]
             [idx_brkt_ident, ".[a]", r#"Index(Dot, Some(Call("a", [])))"#]
             [idx_int, ".[1]", "Index(Dot, Some(Literal(Number(1))))"]
+            [idx_var_ident, "$a.b", r#"Index(Variable("a"), Some(Ident("b")))"#]
+            [idx_var_brkt, "$a.[1]", r#"Index(Variable("a"), Some(Literal(Number(1))))"#]
             [idx_chain, ".[1][2]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(Dot, Some(Literal(Number(2)))))"]
             [idx_chain_dot, r#".[1].[2]"#, "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(Dot, Some(Literal(Number(2)))))"]
             [idx_chain_dot_str, r#"."a"."b""#, r#"Pipe(Index(Dot, Some(Literal(String("a")))), Index(Dot, Some(Literal(String("b")))))"#]
