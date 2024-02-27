@@ -68,16 +68,17 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     assign = {"="}
     arith_assign = {"//="|"+="| "-="| "*="| "/="| "%=" }
     comma = { "," }
-    pipe = { "|" | &"." } // don't consume the dot, parse it as a primary, it will become a pipe in the ast
+    pipe = { "|" }
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
   prefix = _{ func_def }
-  postfix = _{ iterate | slice | arr_idx | ident_idx | string_idx | try_postfix }
+  postfix = _{ slice | idx_chain+ | try_postfix }
+    idx_chain = _{ (index | iterate | slice ) ~ (idx_chain_pipe ~ idx_chain_dot)? }
+    idx_chain_pipe = { "."? ~ &"[" | "." } // synthetic |. between indexing ops
+    idx_chain_dot = { &ANY }
+    index = { "[" ~ pratt_expr ~ "]" | ident | string }
     iterate = { "[" ~ "]" }
     slice = { "[" ~ pratt_expr? ~ colon ~ pratt_expr? ~ "]" }
-    arr_idx = {"["  ~ pratt_expr ~"]"}
-    ident_idx = { ident }
-    string_idx = { string }
-    try_postfix = { "?" }
+    try_postfix = { "?"+ }
   primary = _{
     obj |
     if_cond |

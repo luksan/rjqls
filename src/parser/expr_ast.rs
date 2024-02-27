@@ -422,6 +422,11 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     }
 
     fn visit_try_catch(&self, try_expr: &'_ Expr, catch_expr: Option<&'_ Expr>) -> () {
+        if matches!(try_expr, Expr::Index(_, _)) && catch_expr.is_none() {
+            try_expr.accept(self);
+            self.putc('?');
+            return;
+        }
         self.puts("try ");
         try_expr.accept(self);
         if let Some(catch_expr) = catch_expr {

@@ -16,7 +16,8 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::infix(Rule::colon, Assoc::Left))
         .op(
             Op::infix(Rule::pipe, Assoc::Left) | // pipe and comma have the same precedence
-            Op::infix(Rule::comma, Assoc::Left),
+            Op::infix(Rule::comma, Assoc::Left) |
+            Op::infix(Rule::idx_chain_pipe, Assoc::Left), // virtual pipe in index chain
         )
         .op(Op::infix(Rule::upd_assign, Assoc::Left) // fmt
             | Op::infix(Rule::assign, Assoc::Left))
@@ -30,10 +31,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
             | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::as_, Assoc::Left)) // https://github.com/jqlang/jq/issues/2446
         .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
-        .op(Op::postfix(Rule::arr_idx)
-            | Op::postfix(Rule::iterate)
-            | Op::postfix(Rule::string_idx)
-            | Op::postfix(Rule::ident_idx))
+        .op(Op::postfix(Rule::index) | Op::postfix(Rule::iterate) | Op::postfix(Rule::slice))
         .op(Op::postfix(Rule::try_postfix))
 }
 
@@ -170,7 +168,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                     }
                     Expr::Call(ident, params)
                 }
-                Rule::dot_primary => Expr::Dot,
+                Rule::dot_primary | Rule::idx_chain_dot => Expr::Dot,
                 Rule::ident => Expr::Ident(p.inner_string(0)),
                 Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
                 Rule::if_cond => parse_if_expr(p),
@@ -231,7 +229,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::eq => Expr::BinOp(BinOps::Eq, lhs, rhs),
                 Rule::neq => Expr::BinOp(BinOps::NotEq, lhs, rhs),
                 Rule::ord => Expr::BinOp(BinOps::from_str(op.as_str()).unwrap(), lhs, rhs),
-                Rule::pipe => Expr::Pipe(lhs, rhs),
+                Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
                 r => {
                     panic!("Missing pratt infix rule {r:?}")
                 }
@@ -254,13 +252,8 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
         })
         .map_postfix(|expr, op| {
             Ast::new(match op.as_rule() {
-                Rule::arr_idx => Expr::Index(expr, Some(parse_inner_expr(op))),
+                Rule::index => Expr::Index(expr, Some(parse_inner_expr(op))),
                 Rule::iterate => Expr::Index(expr, None),
-                Rule::ident_idx => Expr::Index(expr, Some(parse_inner_expr(op))),
-                Rule::string_idx => Expr::Index(
-                    expr,
-                    Some(Ast::new(Expr::Literal(Value::String(op.inner_string(2))))),
-                ),
                 Rule::try_postfix => Expr::TryCatch(expr, None),
                 r => panic!("Missing pratt postfix rule {r:?}"),
             })
@@ -356,6 +349,7 @@ mod test_parser {
 
         check_ast_fmt![
             [add, "123e-3 + 3"]
+            [chained_index_try, ".[1][2]?[3]", ".[1]|.[2]?[3]"]
             [str_int, r#""x\(1 + 2)x""#]
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
             [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
@@ -363,16 +357,20 @@ mod test_parser {
             [try1, "try 1"],
             [try_catch, "try 1 catch 2"],
             [try_postfix, "1?", "try 1"],
+            [try_binding, ". + .[1][2]?", ". + .[1]|.[2]?"]
         ];
 
         fn assert_ast_fmt(filter: &str, ref_ast: &str) {
             let ast = parse_pratt_ast(filter).unwrap();
             let str_rep = format!("{ast}");
-            assert_eq!(&str_rep, ref_ast);
+            assert_eq!(
+                &str_rep, ref_ast,
+                "AST fmt didn't match with reference (right)"
+            );
             // Check that the AST str rep round-trips
             let ast = parse_pratt_ast(&str_rep).unwrap();
             let str_rep = format!("{ast}");
-            assert_eq!(&str_rep, ref_ast);
+            assert_eq!(&str_rep, ref_ast, "AST fmt didn't round-trip");
         }
     }
 
@@ -390,8 +388,21 @@ mod test_parser {
         check_ast![
             [dot, ".", "Dot"]
             [empty_string, "\"\"", "Literal(String(\"\"))"]
-            [dot_obj_idx, ".a", "Index(Dot, Some(Ident(\"a\")))"]
-            [dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
+            [array, "[1,2]", "Array([Literal(Number(1)), Literal(Number(2))])"]
+
+            [iter, ".[]", "Index(Dot, None)"]
+            [idx_item, ".a", r#"Index(Dot, Some(Ident("a")))"#],
+            [idx_string, r#"."a""#, r#"Index(Dot, Some(Literal(String("a"))))"#]
+            [idx_brkt_string, r#".["a"]"#, r#"Index(Dot, Some(Literal(String("a"))))"#]
+            [idx_brkt_ident, ".[a]", r#"Index(Dot, Some(Call("a", [])))"#]
+            [idx_int, ".[1]", "Index(Dot, Some(Literal(Number(1))))"]
+            [idx_chain, ".[1][2]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(Dot, Some(Literal(Number(2)))))"]
+            [idx_chain_dot, r#".[1].[2]"#, "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(Dot, Some(Literal(Number(2)))))"]
+            [idx_chain_dot_str, r#"."a"."b""#, r#"Pipe(Index(Dot, Some(Literal(String("a")))), Index(Dot, Some(Literal(String("b")))))"#]
+            [idx_chain_str_brkt, r#"."a"[1]"#, r#"Pipe(Index(Dot, Some(Literal(String("a")))), Index(Dot, Some(Literal(Number(1)))))"#]
+            [idx_chain_try, ".[1][2]?[3]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
+            [idx_dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
+
             [numeric_add,"123e-3 + 3","BinOp(Add, Literal(Number(123e-3)), Literal(Number(3)))"]
             [plain_call, "length", "Call(\"length\", [])"]
             [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("c")), value: Literal(Number(6)) }])"#]
@@ -407,13 +418,24 @@ mod test_parser {
         ];
     }
 
+    #[test]
+    fn assert_syntax_error() {
+        let tests = [".[a].", ".[1].1", ".[][", ".[].[", ".[].."];
+        for flt in tests {
+            let _err = JqGrammar::parse(Rule::pratt_prog, flt).unwrap_err();
+        }
+    }
     fn assert_ast(filter: &str, ref_ast: &str) {
         let ast = parse_pratt_ast(filter).unwrap();
         let str_rep = format!("{ast:?}");
         if str_rep != ref_ast {
-            println!("{ast:#?}")
+            println!("{filter}");
+            println!("{ast:#?}");
         }
-        assert_eq!(&str_rep, ref_ast);
+        assert_eq!(
+            &str_rep, ref_ast,
+            "Parsed AST doesn't match with reference (right)."
+        );
     }
 
     fn parse_pratt_ast(filter: &str) -> Result<Ast> {
