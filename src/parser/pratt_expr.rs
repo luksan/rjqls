@@ -270,6 +270,16 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
             Ast::new(match op.as_rule() {
                 Rule::index => Expr::Index(expr, Some(parse_inner_expr(op))),
                 Rule::iterate => Expr::Index(expr, None),
+                Rule::slice => {
+                    let mut pairs = op.into_inner();
+                    let a = pairs.next().unwrap();
+                    let start = (a.as_rule() != Rule::colon).then(|| {
+                        pairs.next(); // consume colon
+                        parse_inner_expr(a)
+                    });
+                    let end = pairs.next().map(parse_inner_expr);
+                    Expr::Slice(expr, start, end)
+                }
                 Rule::try_postfix => Expr::TryCatch(expr, None),
                 r => panic!("Missing pratt postfix rule {r:?}"),
             })
@@ -373,6 +383,7 @@ mod test_parser {
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
             [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
+            [slice, ".[4:-6]"],
 
             [binop_alt, "false // 1"]
             [binop_and, "true and false"]
@@ -426,6 +437,9 @@ mod test_parser {
             [idx_chain_str_brkt, r#"."a"[1]"#, r#"Pipe(Index(Dot, Some(Literal(String("a")))), Index(Dot, Some(Literal(Number(1)))))"#]
             [idx_chain_try, ".[1][2]?[3]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
             [idx_dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
+            [slice, ".[1:2]", "Slice(Dot, Some(Literal(Number(1))), Some(Literal(Number(2))))"]
+            [slice_start, ".[1:]", "Slice(Dot, Some(Literal(Number(1))), None)"]
+            [slice_end, ".[:1]", "Slice(Dot, None, Some(Literal(Number(1))))"]
 
             [ua_add, ".x += 1", r#"UpdateAssign(Index(Dot, Some(Ident("x"))), BinOp(Add, Dot, Literal(Number(1))))"#]
 
@@ -446,7 +460,9 @@ mod test_parser {
 
     #[test]
     fn assert_syntax_error() {
-        let tests = [".[a].", ".[1].1", ".[][", ".[].[", ".[]..", ".a + = 1"];
+        let tests = [
+            ".[a].", ".[1].1", ".[][", ".[].[", ".[]..", ".a + = 1", ".[:]",
+        ];
         for flt in tests {
             let _err = JqGrammar::parse(Rule::pratt_prog, flt).unwrap_err();
         }

@@ -76,6 +76,7 @@ pub enum Expr {
     Pipe(Ast, Ast),
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
+    Slice(Ast, Option<Ast>, Option<Ast>),
     StringInterp(Vec<Expr>),
     TryCatch(Ast, Option<Ast>),
     UpdateAssign(Ast, Ast),
@@ -104,7 +105,7 @@ impl Expr {
             Expr::Dot => visitor.visit_dot(),
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
-            Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref().map(|ast| &**ast)),
+            Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_deref()),
             Expr::Label(name) => unimplemented!(),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
@@ -113,6 +114,9 @@ impl Expr {
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
             Expr::Reduce(input, var, init, update) => unimplemented!(),
             Expr::Scope(s) => visitor.visit_scope(s),
+            Expr::Slice(expr, start, end) => {
+                visitor.visit_slice(expr, start.as_deref(), end.as_deref())
+            }
             Expr::StringInterp(parts) => visitor.visit_string_interp(parts.as_slice()),
             Expr::TryCatch(try_expr, catch_expr) => {
                 visitor.visit_try_catch(try_expr, catch_expr.as_deref())
@@ -214,6 +218,12 @@ pub trait ExprVisitor<'e, R> {
     }
     fn visit_scope(&self, inner: &'e Expr) -> R {
         inner.accept(self);
+        self.default()
+    }
+    fn visit_slice(&self, expr: &'e Expr, start: Option<&'e Expr>, end: Option<&'e Expr>) -> R {
+        expr.accept(self);
+        start.map(|s| s.accept(self));
+        end.map(|s| s.accept(self));
         self.default()
     }
     fn visit_string_interp(&self, parts: &'e [Expr]) -> R {
@@ -407,6 +417,15 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc('(');
         inner.accept(self);
         self.putc(')');
+    }
+
+    fn visit_slice(&self, expr: &Expr, start: Option<&'_ Expr>, end: Option<&'_ Expr>) -> () {
+        expr.accept(self);
+        self.putc('[');
+        start.map(|s| s.accept(self));
+        self.putc(':');
+        end.map(|s| s.accept(self));
+        self.putc(']');
     }
 
     fn visit_string_interp(&self, parts: &[Expr]) -> () {

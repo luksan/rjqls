@@ -79,7 +79,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     idx_chain_dot = { &ANY }
     index = { "[" ~ pratt_expr ~ "]" | ident | string }
     iterate = { "[" ~ "]" }
-    slice = { "[" ~ pratt_expr? ~ colon ~ pratt_expr? ~ "]" }
+    slice = { "[" ~ (( pratt_expr ~ colon ~ pratt_expr? ) | ( colon ~ pratt_expr )) ~ "]" }
     try_postfix = { "?"+ }
   primary = _{
     obj |
