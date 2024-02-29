@@ -108,7 +108,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     else_ = {"else" ~ pratt_expr}
     label = {"label" ~ variable}
     break_ = {"break"~ variable}
-    foreach = {"foreach" ~ pratt_expr ~"as"~variable ~ "(" ~ pratt_expr~";"~pratt_expr~";"~pratt_expr~")"}
+    foreach = {"foreach" ~ pratt_expr ~ "as" ~ variable ~ "(" ~ pratt_expr ~ ";" ~ pratt_expr ~ (";" ~ pratt_expr)? ~ ")"}
     reduce = {"reduce" ~ pratt_expr ~ "as" ~ variable ~ "(" ~ pratt_expr ~ ";" ~ pratt_expr ~ ")"}
     try_catch = {"try" ~pratt_expr ~ ("catch" ~ pratt_expr)?}
 

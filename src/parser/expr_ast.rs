@@ -62,6 +62,7 @@ pub enum Expr {
         rhs: Ast,
     },
     Dot,
+    ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
     Ident(String),
     // the first vec is conditions, the second is true branches, with else as the last element
     IfElse(Vec<Expr>, Vec<Expr>),
@@ -103,6 +104,7 @@ impl Expr {
                 rhs,
             } => visitor.visit_define_function(name, args, body, rhs),
             Expr::Dot => visitor.visit_dot(),
+            Expr::ForEach(expr, var, init, update, extract) => unimplemented!(),
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_deref()),

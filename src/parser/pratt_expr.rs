@@ -183,6 +183,18 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                     Expr::Call(ident, params)
                 }
                 Rule::dot_primary | Rule::idx_chain_dot => Expr::Dot,
+                Rule::foreach => {
+                    let p = &mut p.into_inner();
+                    let expr = next_expr(p);
+                    let var = p.next().unwrap().inner_string(1);
+                    let init = next_expr(p);
+                    let update = next_expr(p);
+                    let extract = p
+                        .next()
+                        .map(parse_inner_expr)
+                        .unwrap_or_else(|| Expr::Dot.into());
+                    Expr::ForEach(expr, var, init, update, extract)
+                }
                 Rule::ident => Expr::Ident(p.inner_string(0)),
                 Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
                 Rule::if_cond => parse_if_expr(p),
@@ -465,6 +477,8 @@ mod test_parser {
             [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc { name: "y", args: [], body: Literal(Number(3)), rhs: Dot }])"#]
             [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
+            [foreach, "foreach .[] as $i (0; .+$i; .*2)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), BinOp(Mul, Dot, Literal(Number(2))))"#]
+            [foreach2, "foreach .[] as $i (0; .+$i)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), Dot)"#]
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
         ];
     }
