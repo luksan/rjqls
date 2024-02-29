@@ -10,7 +10,7 @@ use crate::value::Value;
 macro_rules! binop_str_map {
 
     ( $($str:literal => $op:ident),+$(,)? ) => {
-        #[derive(Debug, Copy, Clone)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq)]
         pub enum BinOps {
             $($op,)+
         }
@@ -48,7 +48,7 @@ impl Display for BinOps {
 
 pub type Ast = Box<Expr>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Array(Vec<Expr>),
     Assign(Ast, Ast),

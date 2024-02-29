@@ -417,17 +417,16 @@ mod test_parser {
             [try_binding, ". + .[1][2]?", ". + .[1]|.[2]?"]
         ];
 
-        fn assert_ast_fmt(filter: &str, ref_ast: &str) {
+        fn assert_ast_fmt(filter: &str, ref_flt: &str) {
             let ast = parse_pratt_ast(filter).unwrap();
             let str_rep = format!("{ast}");
             assert_eq!(
-                &str_rep, ref_ast,
+                &str_rep, ref_flt,
                 "AST fmt didn't match with reference (right)"
             );
             // Check that the AST str rep round-trips
-            let ast = parse_pratt_ast(&str_rep).unwrap();
-            let str_rep = format!("{ast}");
-            assert_eq!(&str_rep, ref_ast, "AST fmt didn't round-trip");
+            let ast2 = parse_pratt_ast(&str_rep).unwrap();
+            assert_eq!(ast, ast2, "AST fmt didn't round-trip");
         }
     }
 
