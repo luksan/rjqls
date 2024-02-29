@@ -7,46 +7,38 @@ use tracing::{instrument, trace};
 
 use crate::value::Value;
 
-#[derive(Debug, Copy, Clone)]
-pub enum BinOps {
-    Add,
-    Sub,
-    Mul,
-    Div,
+macro_rules! binop_str_map {
 
-    Alt,
-
-    Eq,
-    NotEq,
-
-    Less,
-}
-
-impl FromStr for BinOps {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            ">" => Self::Less,
-            _ => bail!("Failed to parse '{s}' as a BinOp"),
-        })
-    }
-}
-
-impl BinOps {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            BinOps::Add => "+",
-            BinOps::Sub => "-",
-            BinOps::Mul => "*",
-            BinOps::Div => "/",
-            BinOps::Alt => "//",
-            BinOps::Eq => "==",
-            BinOps::NotEq => "!=",
-            BinOps::Less => "<",
+    ( $($str:literal => $op:ident),+$(,)? ) => {
+        #[derive(Debug, Copy, Clone)]
+        pub enum BinOps {
+            $($op,)+
         }
-    }
+
+        impl FromStr for BinOps {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(match s {
+                    $($str => Self::$op,)+
+                    _ => bail!("Failed to parse '{s}' as a BinOp"),
+                })
+            }
+        }
+
+        impl BinOps {
+            pub fn as_str(&self) -> &'static str {
+                match self {
+                    $(Self::$op => $str),+
+                }
+            }
+        }
+    };
 }
+
+binop_str_map!("+" => Add, "-" => Sub, "*" => Mul, "/" => Div,
+    "//" => Alt,
+    "==" => Eq, "!=" => NotEq, "<" => Less, ">" => Greater, "<=" => LessEq, ">=" =>  GreaterEq );
 
 impl Display for BinOps {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -86,6 +78,7 @@ pub enum Expr {
     Scope(Ast),
     StringInterp(Vec<Expr>),
     TryCatch(Ast, Option<Ast>),
+    UpdateAssign(Ast, Ast),
     Variable(String),
     Label(String),
     Break(String),
@@ -124,6 +117,7 @@ impl Expr {
             Expr::TryCatch(try_expr, catch_expr) => {
                 visitor.visit_try_catch(try_expr, catch_expr.as_deref())
             }
+            Expr::UpdateAssign(path, assign) => visitor.visit_update_assign(path, assign),
             Expr::Variable(s) => visitor.visit_variable(s),
         }
     }
@@ -233,6 +227,11 @@ pub trait ExprVisitor<'e, R> {
         if let Some(catch_expr) = catch_expr {
             catch_expr.accept(self);
         }
+        self.default()
+    }
+    fn visit_update_assign(&self, path: &'e Expr, assign: &'e Expr) -> R {
+        path.accept(self);
+        assign.accept(self);
         self.default()
     }
     fn visit_variable(&self, name: &'e str) -> R {

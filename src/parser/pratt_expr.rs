@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
@@ -15,13 +13,14 @@ fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
         .op(Op::infix(Rule::colon, Assoc::Left))
         .op(
-            Op::infix(Rule::pipe, Assoc::Left) | // pipe and comma have the same precedence
-            Op::infix(Rule::comma, Assoc::Left) |
-            Op::infix(Rule::idx_chain_pipe, Assoc::Left), // virtual pipe in index chain
+            Op::infix(Rule::pipe, Assoc::Left)  // pipe and comma have the same precedence
+            | Op::infix(Rule::comma, Assoc::Left)
+            | Op::infix(Rule::idx_chain_pipe, Assoc::Left), // virtual pipe in index chain
         )
         .op(Op::infix(Rule::alt, Assoc::Right))
-        .op(Op::infix(Rule::upd_assign, Assoc::Left) // fmt
-            | Op::infix(Rule::assign, Assoc::Left))
+        .op(Op::infix(Rule::upd_assign, Assoc::Left)
+            | Op::infix(Rule::assign, Assoc::Left)
+            | Op::infix(Rule::arith_assign, Assoc::Left))
         .op(Op::prefix(Rule::func_def))
         .op(Op::infix(Rule::or, Assoc::Left))
         .op(Op::infix(Rule::and, Assoc::Left))
@@ -31,7 +30,9 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::infix(Rule::add, Assoc::Left) // fmt
             | Op::infix(Rule::sub, Assoc::Left))
         .op(Op::infix(Rule::as_, Assoc::Left)) // https://github.com/jqlang/jq/issues/2446
-        .op(Op::infix(Rule::mul, Assoc::Left) | Op::infix(Rule::div, Assoc::Left))
+        .op(Op::infix(Rule::mul, Assoc::Left)
+            | Op::infix(Rule::div, Assoc::Left)
+            | Op::infix(Rule::mod_, Assoc::Left))
         .op(Op::postfix(Rule::index) | Op::postfix(Rule::iterate) | Op::postfix(Rule::slice))
         .op(Op::postfix(Rule::try_postfix))
 }
@@ -219,25 +220,26 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
             })
         })
         .map_infix(|lhs, op, rhs| {
-            macro_rules! binop {
-                ($binop:ident) => {
-                    Expr::BinOp(BinOps::$binop, lhs, rhs)
-                };
-            }
             let expr = match op.as_rule() {
-                Rule::add => binop!(Add),
-                Rule::sub => binop!(Sub),
-                Rule::mul => binop!(Mul),
-                Rule::div => binop!(Div),
-
-                Rule::alt => binop!(Alt),
+                Rule::add
+                | Rule::sub
+                | Rule::mul
+                | Rule::div
+                | Rule::alt
+                | Rule::ord
+                | Rule::eq
+                | Rule::neq => {
+                    let binop: BinOps = op.as_str().parse().unwrap();
+                    Expr::BinOp(binop, lhs, rhs)
+                }
                 Rule::as_ => Expr::BindVars(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
-                Rule::eq => binop!(Eq),
-                Rule::neq => binop!(NotEq),
-                Rule::ord => Expr::BinOp(BinOps::from_str(op.as_str()).unwrap(), lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
-                Rule::upd_assign => Expr::Dot, // FIXME
+                Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
+                Rule::arith_assign => {
+                    let binop: BinOps = op.into_inner().next().unwrap().as_str().parse().unwrap();
+                    Expr::UpdateAssign(lhs, Expr::BinOp(binop, Expr::Dot.into(), rhs).into())
+                }
                 r => {
                     panic!("Missing pratt infix rule {r:?}")
                 }
@@ -415,6 +417,8 @@ mod test_parser {
             [idx_chain_try, ".[1][2]?[3]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
             [idx_dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
 
+            [ua_add, ".x += 1", r#"UpdateAssign(Index(Dot, Some(Ident("x"))), BinOp(Add, Dot, Literal(Number(1))))"#]
+
             [numeric_add,"123e-3 + 3","BinOp(Add, Literal(Number(123e-3)), Literal(Number(3)))"]
             [plain_call, "length", "Call(\"length\", [])"]
             [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("c")), value: Literal(Number(6)) }])"#]
@@ -424,7 +428,7 @@ mod test_parser {
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
             [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc { name: "y", args: [], body: Literal(Number(3)), rhs: Dot }])"#]
-            [if_else, "if . then 3 elif 3>4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
+            [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
         ];
@@ -432,7 +436,7 @@ mod test_parser {
 
     #[test]
     fn assert_syntax_error() {
-        let tests = [".[a].", ".[1].1", ".[][", ".[].[", ".[].."];
+        let tests = [".[a].", ".[1].1", ".[][", ".[].[", ".[]..", ".a + = 1"];
         for flt in tests {
             let _err = JqGrammar::parse(Rule::pratt_prog, flt).unwrap_err();
         }

@@ -238,6 +238,9 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     BinOps::Eq => Ok(Value::Bool(l == r)),
                     BinOps::NotEq => Ok(Value::Bool(l != r)),
                     BinOps::Less => Ok(l.less_than(r)),
+                    BinOps::LessEq => unimplemented!(),
+                    BinOps::Greater => unimplemented!(),
+                    BinOps::GreaterEq => unimplemented!(),
                 };
                 ret.push(r);
             }

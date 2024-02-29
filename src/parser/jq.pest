@@ -53,7 +53,7 @@ variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{"
 
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
-  infix = _{ arith_assign | upd_assign| alt | and | or | ord | eq | neq | assign|add | sub| mul | div | comma | pipe | as_ }
+  infix = _{ arith_assign | upd_assign| alt | and | or | ord | eq | neq | assign | add | sub| mul | div | mod_ | comma | pipe | as_ }
     alt = {"//"}
     eq = { "==" }
     neq = { "!=" }
@@ -61,12 +61,13 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     sub = { "-" }
     mul = { "*" }
     div = { "/" }
+    mod_ = { "%" }
     ord = { "<=" | ">=" | "<"| ">"}
     and = {"and"}
     or = {"or"}
     upd_assign = {"|="}
     assign = {"="}
-    arith_assign = {"//="|"+="| "-="| "*="| "/="| "%=" }
+    arith_assign = ${ (alt | add | sub | mul | div | mod_ ) ~ "=" }
     comma = { "," }
     pipe = { "|" }
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
