@@ -47,10 +47,13 @@ fn parse_literal(pairs: Pair<Rule>) -> Value {
     }
 }
 
-fn parse_object(pair: Pair<Rule>) -> Ast {
+fn parse_object(pair: Pair<Rule>) -> Vec<Expr> {
     let pratt = get_pratt_parser();
     let pairs = pair.into_inner();
-    pratt
+    if pairs.len() == 0 {
+        return vec![];
+    }
+    let commas = pratt
         .map_primary(|p| match p.as_rule() {
             Rule::obj_pair => {
                 let mut inner = p.into_inner();
@@ -71,7 +74,8 @@ fn parse_object(pair: Pair<Rule>) -> Ast {
             };
             Ast::new(expr)
         })
-        .parse(pairs)
+        .parse(pairs);
+    vec_from_commas(commas)
 }
 
 fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {
@@ -176,7 +180,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::if_cond => parse_if_expr(p),
                 Rule::label => Expr::Label(p.inner_string(2)),
                 Rule::literal => Expr::Literal(parse_literal(p)),
-                Rule::obj => Expr::Object(vec_from_commas(parse_object(p))),
+                Rule::obj => Expr::Object(parse_object(p)),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
                 Rule::primary_group => Expr::Scope(parse_inner_expr(p)),
                 Rule::reduce => {
@@ -359,6 +363,9 @@ mod test_parser {
 
         check_ast_fmt![
             [add, "123e-3 + 3"]
+            [obj_empty, "{}"]
+            [obj_a, "{a: 1}"]
+
             [chained_index_try, ".[1][2]?[3]", ".[1]|.[2]?[3]"]
             [str_int, r#""x\(1 + 2)x""#]
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
