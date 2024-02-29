@@ -51,6 +51,7 @@ pub type Ast = Box<Expr>;
 #[derive(Debug)]
 pub enum Expr {
     Array(Vec<Expr>),
+    Assign(Ast, Ast),
     BindVars(Ast, Ast),
     BinOp(BinOps, Ast, Ast),
     Call(String, Vec<Expr>),
@@ -92,6 +93,7 @@ impl Expr {
         trace!("Visiting {self:?}");
         match self {
             Expr::Array(r) => visitor.visit_array(r),
+            Expr::Assign(lhs, rhs) => unimplemented!(),
             Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
             Expr::Break(name) => unimplemented!(),

@@ -261,6 +261,7 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::as_ => Expr::BindVars(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
+                Rule::assign => Expr::Assign(lhs, rhs),
                 Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
                 Rule::arith_assign => {
                     let binop: BinOps = op.into_inner().next().unwrap().as_str().parse().unwrap();

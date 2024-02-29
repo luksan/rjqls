@@ -91,6 +91,12 @@ mod test {
     }
 
     #[test]
+    fn parse_builtins() {
+        let code = std::fs::read_to_string("src/builtins/builtin.jq").unwrap();
+        parse_module(&code).unwrap();
+    }
+
+    #[test]
     fn parse_tests() {
         let code = std::fs::read_to_string("tests/log-line-parser.jq").unwrap();
         let res = JqGrammar::parse(Rule::program, &code);
