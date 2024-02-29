@@ -162,7 +162,15 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
     pratt
         .map_primary(|p| {
             Ast::new(match p.as_rule() {
-                Rule::arr => Expr::Array(vec_from_commas(parse_inner_expr(p))),
+                Rule::arr => {
+                    let p = p.into_inner();
+                    let arr = if p.len() > 0 {
+                        vec_from_commas(pratt_parser(p))
+                    } else {
+                        vec![]
+                    };
+                    Expr::Array(arr)
+                }
                 Rule::break_ => Expr::Break(p.inner_string(2)),
                 Rule::call => {
                     let mut x = p.into_inner();
@@ -375,6 +383,9 @@ mod test_parser {
 
         check_ast_fmt![
             [add, "123e-3 + 3"]
+            [array_empty, "[]"]
+            [array_1, "[1]"]
+            [array_2, "[1,2]"]
             [obj_empty, "{}"]
             [obj_a, "{a: 1}"]
 
