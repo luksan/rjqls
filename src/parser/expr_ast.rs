@@ -37,7 +37,7 @@ macro_rules! binop_str_map {
 }
 
 binop_str_map!("+" => Add, "-" => Sub, "*" => Mul, "/" => Div,
-    "//" => Alt,
+    "//" => Alt, "and" => And, "or" => Or,
     "==" => Eq, "!=" => NotEq, "<" => Less, ">" => Greater, "<=" => LessEq, ">=" =>  GreaterEq );
 
 impl Display for BinOps {

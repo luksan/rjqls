@@ -6,12 +6,12 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{bail, Context, Result};
 use onig::{Regex, RegexOptions, Syntax};
-use serde_json::{to_value, Map};
+use serde_json::{Map, to_value};
 
 use crate::interpreter::bind_var_pattern::BindVars;
+use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::interpreter::BoundFunc;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Value, ValueOps};
 
@@ -234,13 +234,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     BinOps::Mul => l.mul(r),
                     BinOps::Div => l.div(r),
 
-                    BinOps::Alt => unimplemented!(),
                     BinOps::Eq => Ok(Value::Bool(l == r)),
                     BinOps::NotEq => Ok(Value::Bool(l != r)),
                     BinOps::Less => Ok(l.less_than(r)),
-                    BinOps::LessEq => unimplemented!(),
-                    BinOps::Greater => unimplemented!(),
-                    BinOps::GreaterEq => unimplemented!(),
+                    op => unimplemented!("{op:?}"),
                 };
                 ret.push(r);
             }

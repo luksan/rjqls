@@ -230,6 +230,8 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 | Rule::mul
                 | Rule::div
                 | Rule::alt
+                | Rule::and
+                | Rule::or
                 | Rule::ord
                 | Rule::eq
                 | Rule::neq => {
@@ -373,6 +375,7 @@ mod test_parser {
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
 
             [binop_alt, "false // 1"]
+            [binop_and, "true and false"]
             [try1, "try 1"],
             [try_catch, "try 1 catch 2"],
             [try_postfix, "1?", "try 1"],
