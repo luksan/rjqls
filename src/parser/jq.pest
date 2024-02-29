@@ -89,7 +89,6 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     foreach|
     reduce |
     try_catch|
-    not|
     dot_primary |
     call |
     string |
@@ -107,7 +106,6 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     if_cond = { "if" ~ pratt_expr ~ "then" ~ pratt_expr ~ elif* ~ else_? ~ "end" }
     elif = {"elif" ~ pratt_expr ~ "then" ~ pratt_expr}
     else_ = {"else" ~ pratt_expr}
-    not = {"not"}
     label = {"label" ~ variable}
     break_ = {"break"~ variable}
     foreach = {"foreach" ~ pratt_expr ~"as"~variable ~ "(" ~ pratt_expr~";"~pratt_expr~";"~pratt_expr~")"}
