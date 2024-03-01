@@ -6,19 +6,19 @@ pub use serde_json::{Number, to_value, Value as JsonValue};
 
 
 pub type Value = JsonValue;
-
-pub trait ValueOps {
-    fn add(&self, other: &Self) -> Result<Value>;
-    fn sub(&self, other: &Self) -> Result<Value>;
-    fn mul(&self, other: &Self) -> Result<Value>;
-    fn div(&self, other: &Self) -> Result<Value>;
+pub trait ValueOps: Sized {
+    fn add(&self, other: &Self) -> Result<Self>;
+    fn sub(&self, other: &Self) -> Result<Self>;
+    fn mul(&self, other: &Self) -> Result<Self>;
+    fn div(&self, other: &Self) -> Result<Self>;
 
     fn is_truthy(&self) -> bool;
-    fn less_than(&self, other: &Self) -> Value;
-    fn index(&self, index: &Value) -> Result<Value>;
-    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Value> + '_>>;
+    fn less_than(&self, other: &Self) -> Self;
+    fn index(&self, index: &Self) -> Result<Self>;
+    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Self> + '_>>;
 
-    fn length(&self) -> Result<Value>;
+    fn length(&self) -> Result<Self>;
+}
 
 }
 
@@ -56,42 +56,43 @@ impl Display for ArcValue {
     }
 }
 
-impl ValueOps for Value {
-    fn add(&self, other: &Self) -> Result<Value> {
+
+impl ValueOps for JsonValue {
+    fn add(&self, other: &Self) -> Result<Self> {
         Ok(match (self, other) {
-            (Value::Null, b) => b.clone(),
-            (a, Value::Null) => a.clone(),
-            (Value::Array(a), Value::Array(b)) => {
-                Value::Array(a.iter().chain(b.iter()).cloned().collect())
+            (Self::Null, b) => b.clone(),
+            (a, Self::Null) => a.clone(),
+            (Self::Array(a), Self::Array(b)) => {
+                Self::Array(a.iter().chain(b.iter()).cloned().collect())
             }
 
-            (Value::Number(a), Value::Number(b)) => {
+            (Self::Number(a), Self::Number(b)) => {
                 (a.as_f64().unwrap() + b.as_f64().unwrap()).into()
             }
-            (Value::Object(a), Value::Object(b)) => {
+            (Self::Object(a), Self::Object(b)) => {
                 let mut sum = a.clone();
                 sum.extend(b.iter().map(|(k, v)| (k.clone(), v.clone())));
-                Value::Object(sum)
+                Self::Object(sum)
             }
             (a, b) => bail!("Can't add {a:?} and {b:?}"),
         })
     }
 
-    fn sub(&self, other: &Self) -> Result<Value> {
+    fn sub(&self, other: &Self) -> Result<Self> {
         Ok(match (self, other) {
-            (Value::Number(a), Value::Number(b)) => {
+            (Self::Number(a), Self::Number(b)) => {
                 (a.as_f64().unwrap() - b.as_f64().unwrap()).into()
             }
             (a, b) => bail!("Can't subtract {b:?} from {a:?}"),
         })
     }
-    fn mul(&self, other: &Self) -> Result<Value> {
+    fn mul(&self, other: &Self) -> Result<Self> {
         let (Some(a), Some(b)) = (self.as_f64(), other.as_f64()) else {
             bail!("Can't multiply {self} with {other}.");
         };
         Ok((a * b).into())
     }
-    fn div(&self, other: &Self) -> Result<Value> {
+    fn div(&self, other: &Self) -> Result<Self> {
         let (Some(a), Some(b)) = (self.as_f64(), other.as_f64()) else {
             bail!("Can't divide {self} with {other}.");
         };
@@ -100,53 +101,53 @@ impl ValueOps for Value {
 
     fn is_truthy(&self) -> bool {
         match self {
-            Value::Null => false,
-            Value::Bool(b) => *b,
+            Self::Null => false,
+            Self::Bool(b) => *b,
             _ => true,
         }
     }
 
-    fn less_than(&self, other: &Self) -> Value {
-        Value::Bool(match (self, other) {
-            (Value::Null, _) => false,
+    fn less_than(&self, other: &Self) -> Self {
+        Self::Bool(match (self, other) {
+            (Self::Null, _) => false,
             _ => unimplemented!(),
         })
     }
 
-    fn index(&self, index: &Value) -> Result<Value> {
-        if let Value::Object(o) = self {
+    fn index(&self, index: &Self) -> Result<Self> {
+        if let Self::Object(o) = self {
             let idx = index
                 .as_str()
                 .with_context(|| format!("Can't index object with {index}."))?;
-            return Ok(o.get(idx).cloned().unwrap_or(Value::Null));
+            return Ok(o.get(idx).cloned().unwrap_or(Self::Null));
         }
         let idx = index.as_u64().context("Index is not a number")? as usize;
-        if let Value::Array(v) = self {
-            return Ok(v.get(idx).cloned().unwrap_or(Value::Null));
+        if let Self::Array(v) = self {
+            return Ok(v.get(idx).cloned().unwrap_or(Self::Null));
         }
 
         unimplemented!()
     }
 
-    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Value> + '_>> {
+    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Self> + '_>> {
         match self {
-            Value::Array(v) => Ok(Box::new(v.iter())),
-            Value::Object(o) => Ok(Box::new(o.iter().map(|(_k, v)| v))),
+            Self::Array(v) => Ok(Box::new(v.iter())),
+            Self::Object(o) => Ok(Box::new(o.iter().map(|(_k, v)| v))),
             _ => bail!("Can't iterate over {self:?}."),
         }
     }
 
-    fn length(&self) -> Result<Value> {
+    fn length(&self) -> Result<Self> {
         let len: usize = match self {
-            Value::Null => 0,
-            Value::Bool(_) => {
+            Self::Null => 0,
+            Self::Bool(_) => {
                 bail!("Bool has no length.")
             }
-            Value::Number(_) => return Ok(self.clone()),
-            Value::String(s) => s.len(),
-            Value::Array(a) => a.len(),
-            Value::Object(o) => o.len(),
+            Self::Number(_) => return Ok(self.clone()),
+            Self::String(s) => s.len(),
+            Self::Array(a) => a.len(),
+            Self::Object(o) => o.len(),
         };
-        Ok(Value::Number(Number::from(len)))
+        Ok(Self::Number(Number::from(len)))
     }
 }
