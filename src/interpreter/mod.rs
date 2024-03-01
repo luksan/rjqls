@@ -268,7 +268,7 @@ mod test {
               #[test]
               fn $test_name() {
                   let mut i = AstInterpreter::new($prog).unwrap();
-                  let input = Value::Null;
+                  let input = ().into();
                   let output = i.eval_input(input).unwrap();
                   let expect: Vec<_> = [$($expect),+].into_iter().map(jval).collect();
                   assert_eq!(&output, &expect);

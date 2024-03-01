@@ -113,20 +113,19 @@ fn build_input_value_iterator(
     input_files: Vec<PathBuf>,
 ) -> Box<dyn Iterator<Item = Result<Value>>> {
     if copts.null_input {
-        return Box::new(iter::once(Ok(Value::Null)));
+        return Box::new(iter::once(Ok(().into())));
     }
 
     if !input_files.is_empty() {
         let raw_values = input_files.into_iter().map(|file| {
             std::fs::read_to_string(file)
                 .context("Couldn't read {file}")
-                .map(Value::String)
+                .map(|s| Value::from(s))
         });
         if !copts.raw_input {
             return Box::new(raw_values.map(|res| {
                 res.and_then(|v| {
-                    let Value::String(s) = v else { unreachable!() };
-                    serde_json::from_str(&s).context("JSON parse error")
+                    serde_json::from_str(v.as_str().unwrap()).context("JSON parse error")
                 })
             }));
         }
@@ -141,11 +140,10 @@ fn build_input_value_iterator(
         )
     } else {
         // raw input
-        Box::new(
-            stdin()
-                .lines()
-                .map(|res| res.map(Value::String).context("Failed to read from stdin")),
-        )
+        Box::new(stdin().lines().map(|res| {
+            res.map(|s| Value::from(s))
+                .context("Failed to read from stdin")
+        }))
     };
     input_iter
 }
@@ -160,22 +158,20 @@ fn main() -> Result<()> {
 
     let (copts, filter_str, input_files) = opts.get_common_filter_and_files()?;
     let mut prog = AstInterpreter::new(&filter_str)?;
-    let inputs = build_input_value_iterator(&copts, input_files);
+    let mut inputs = build_input_value_iterator(&copts, input_files);
 
     if copts.slurp {
         let input = if !copts.raw_input {
             let inputs: Result<Vec<_>> = inputs.collect();
-            Value::Array(inputs?)
+            Value::from(inputs?)
         } else {
-            let inputs: Vec<String> = inputs
-                .map(|res| {
-                    res.map(|v| {
-                        let Value::String(s) = v else { unreachable!() };
-                        s
-                    })
-                })
-                .collect::<Result<_>>()?;
-            Value::String(inputs.join("\n"))
+            let mut inputs: String = inputs.try_fold(String::new(), |mut acc, n| {
+                acc.push_str(n?.as_str().unwrap());
+                acc.push('\n');
+                Ok::<_, anyhow::Error>(acc)
+            })?;
+            inputs.pop();
+            Value::from(inputs)
         };
         eval_input_and_print(input, &mut prog)?;
     } else {

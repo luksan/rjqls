@@ -1,10 +1,12 @@
-use anyhow::{bail, Context, Result};
-pub use serde_json::{to_value, Number, Value};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
+
+use anyhow::{bail, Context, Result};
+pub use serde_json::{Number, to_value, Value as JsonValue};
 
 use crate::interpreter::ast_eval::ExprResult;
 
-pub type ArcValue = Arc<Value>;
+pub type Value = JsonValue;
 
 pub trait ValueOps {
     fn add(&self, other: &Self) -> Result<Value>;
@@ -22,6 +24,40 @@ pub trait ValueOps {
     fn to_expr_result(self) -> ExprResult<'static>;
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArcValue {
+    inner: Arc<JsonValue>,
+}
+
+impl ArcValue {
+    pub fn as_array(&self) -> Option<&[Self]> {
+        unimplemented!()
+    }
+    pub fn as_str(&self) -> Option<&str> {
+        unimplemented!()
+    }
+}
+
+impl From<JsonValue> for ArcValue {
+    fn from(value: JsonValue) -> Self {
+        Self {
+            inner: Arc::new(value),
+        }
+    }
+}
+
+impl From<f64> for ArcValue {
+    fn from(value: f64) -> Self {
+        JsonValue::from(value).into()
+    }
+}
+
+impl Display for ArcValue {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
+        unimplemented!()
+    }
+}
+
 impl ValueOps for Value {
     fn add(&self, other: &Self) -> Result<Value> {
         Ok(match (self, other) {
@@ -32,7 +68,7 @@ impl ValueOps for Value {
             }
 
             (Value::Number(a), Value::Number(b)) => {
-                to_value(a.as_f64().unwrap() + b.as_f64().unwrap())?
+                (a.as_f64().unwrap() + b.as_f64().unwrap()).into()
             }
             (Value::Object(a), Value::Object(b)) => {
                 let mut sum = a.clone();
@@ -46,7 +82,7 @@ impl ValueOps for Value {
     fn sub(&self, other: &Self) -> Result<Value> {
         Ok(match (self, other) {
             (Value::Number(a), Value::Number(b)) => {
-                to_value(a.as_f64().unwrap() - b.as_f64().unwrap())?
+                (a.as_f64().unwrap() - b.as_f64().unwrap()).into()
             }
             (a, b) => bail!("Can't subtract {b:?} from {a:?}"),
         })
@@ -55,13 +91,13 @@ impl ValueOps for Value {
         let (Some(a), Some(b)) = (self.as_f64(), other.as_f64()) else {
             bail!("Can't multiply {self} with {other}.");
         };
-        to_value(a * b).context("To value failed")
+        Ok((a * b).into())
     }
     fn div(&self, other: &Self) -> Result<Value> {
         let (Some(a), Some(b)) = (self.as_f64(), other.as_f64()) else {
             bail!("Can't divide {self} with {other}.");
         };
-        to_value(a / b).context("To value failed")
+        Ok((a / b).into())
     }
 
     fn is_truthy(&self) -> bool {

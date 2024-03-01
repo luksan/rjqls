@@ -91,7 +91,7 @@ impl<'f> ExprEval<'f> {
     {
         Ok(match (name, args.len()) {
             ("add", 0) => {
-                let mut sum = Value::Null;
+                let mut sum: Value = ().into();
                 for v in self.input.iterate()? {
                     sum = sum.add(v)?;
                 }
@@ -106,14 +106,12 @@ impl<'f> ExprEval<'f> {
                     .accept(self)?
                     .next()
                     .context("match argument must be a string")??;
-                let regex = match &regex {
-                    Value::String(s) => s.as_str(),
-                    Value::Array(a) => a
-                        .get(0)
-                        .and_then(|s| s.as_str())
-                        .context("match argument must be a a string")?,
-                    _ => bail!("match argument must be a string"),
-                };
+                let regex = regex
+                    .as_array()
+                    .and_then(|a| a.get(0))
+                    .unwrap_or(&regex)
+                    .as_str()
+                    .context("match argument must be a string")?;
                 let input = self.input.as_str().with_context(|| {
                     format!(
                         "{} cannot be matched since it is not a string.",
@@ -145,10 +143,10 @@ impl<'f> ExprEval<'f> {
                                     obj.insert("length".to_owned(), len);
                                 } else {
                                     obj.insert("offset".to_owned(), to_value(-1).unwrap());
-                                    obj.insert("string".to_owned(), Value::Null);
+                                    obj.insert("string".to_owned(), ().into());
                                     obj.insert("length".to_owned(), 0.into());
                                 }
-                                obj.insert("name".to_owned(), Value::Null);
+                                obj.insert("name".to_owned(), ().into());
                                 obj
                             })
                             .collect();
@@ -159,7 +157,7 @@ impl<'f> ExprEval<'f> {
                         });
 
                         obj.insert("captures".to_owned(), subs.into());
-                        Value::Object(obj)
+                        obj.into()
                     })
                     .collect();
                 Generator::from_iter(caps.into_iter().map(|o| Ok(o)))
@@ -208,7 +206,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             let v = e.accept(self)?;
             ret = ret.chain(v.into_iter());
         }
-        expr_val_from_value(Value::Array(ret.collect::<Result<_>>()?))
+        expr_val_from_value(Value::from(ret.collect::<Result<Vec<_>>>()?))
     }
 
     fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast) -> ExprResult<'e> {
@@ -234,8 +232,8 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     BinOps::Mul => l.mul(r),
                     BinOps::Div => l.div(r),
 
-                    BinOps::Eq => Ok(Value::Bool(l == r)),
-                    BinOps::NotEq => Ok(Value::Bool(l != r)),
+                    BinOps::Eq => Ok(Value::from(l == r)),
+                    BinOps::NotEq => Ok(Value::from(l != r)),
                     BinOps::Less => Ok(l.less_than(r)),
                     op => unimplemented!("{op:?}"),
                 };
@@ -282,7 +280,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_ident(&self, ident: &str) -> ExprResult<'e> {
-        expr_val_from_value(Value::String(ident.to_string()))
+        expr_val_from_value(Value::from(ident))
     }
 
     fn visit_if_else(&self, cond: &'e [Expr], branches: &'e [Expr]) -> ExprResult<'e> {
@@ -371,7 +369,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         }
         Ok(objects
             .into_iter()
-            .map(|m| Ok(Value::Object(m)))
+            .map(|m| Ok(Value::from(m)))
             .collect::<Vec<_>>()
             .into())
     }
@@ -407,33 +405,35 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn visit_string_interp(&self, parts: &'e [Expr]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
-            if let Expr::Literal(Value::String(s)) = part {
-                for r in ret.iter_mut() {
-                    r.push_str(s);
-                }
-            } else {
-                let mut values = part.accept(self)?;
-                let Some(val) = values.next() else {
-                    return Ok(Generator::empty());
-                };
-                let prefix = ret.clone();
-                let mut strings = &mut ret[0..];
-                let mut val = val?;
-                loop {
-                    for s in strings {
-                        s.push_str(&val.to_string());
+            if let Expr::Literal(string_lit) = part {
+                if let Some(s) = string_lit.as_str() {
+                    for r in ret.iter_mut() {
+                        r.push_str(s);
                     }
-                    let Some(next) = values.next() else {
-                        break;
-                    };
-                    val = next?;
-                    let end = ret.len();
-                    ret.extend(prefix.iter().cloned());
-                    strings = &mut ret[end..]
+                    continue;
                 }
             }
+            let mut values = part.accept(self)?;
+            let Some(val) = values.next() else {
+                return Ok(Generator::empty());
+            };
+            let prefix = ret.clone();
+            let mut strings = &mut ret[0..];
+            let mut val = val?;
+            loop {
+                for s in strings {
+                    s.push_str(&val.to_string());
+                }
+                let Some(next) = values.next() else {
+                    break;
+                };
+                val = next?;
+                let end = ret.len();
+                ret.extend(prefix.iter().cloned());
+                strings = &mut ret[end..]
+            }
         }
-        let ret = ret.into_iter().map(|s| Ok(Value::String(s)));
+        let ret = ret.into_iter().map(|s| Ok(s.into()));
         Ok(Generator::from_iter(ret))
     }
 
@@ -463,7 +463,7 @@ mod test {
     #[test]
     fn test_scope_fail() {
         let filter = "(3 as $a | $a) | $a";
-        let err = eval_expr(filter, Value::Null).unwrap_err();
+        let err = eval_expr(filter, ().into()).unwrap_err();
         assert_eq!(&err.to_string(), "Variable 'a' is not defined.")
     }
 

@@ -435,13 +435,15 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     fn visit_string_interp(&self, parts: &[Expr]) -> () {
         self.putc('"');
         for part in parts {
-            if let Expr::Literal(Value::String(s)) = part {
-                self.puts(s);
-            } else {
-                self.puts("\\(");
-                part.accept(self);
-                self.putc(')');
+            if let Expr::Literal(str_lit) = part {
+                if let Some(s) = str_lit.as_str() {
+                    self.puts(s);
+                    continue;
+                }
             }
+            self.puts("\\(");
+            part.accept(self);
+            self.putc(')');
         }
         self.putc('"');
     }

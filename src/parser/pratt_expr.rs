@@ -39,12 +39,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
 
 fn parse_literal(pairs: Pair<Rule>) -> Value {
     let literal = pairs.into_inner().next().unwrap();
-    match literal.as_rule() {
-        Rule::number => Value::Number(str::parse(literal.as_str()).unwrap()),
-        Rule::bool => Value::Bool(literal.as_str() == "true"),
-        Rule::null => Value::Null,
-        _ => unreachable!(),
-    }
+    literal.as_str().parse().unwrap()
 }
 
 fn parse_object(pair: Pair<Rule>) -> Vec<Expr> {
@@ -214,17 +209,16 @@ pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
                 Rule::string => {
                     let mut x = p.into_inner();
                     match x.len() {
-                        0 => Expr::Literal(Value::String("".to_owned())),
+                        0 => Expr::Literal("".into()),
                         1 => {
                             let s = x.next().unwrap();
-                            Expr::Literal(Value::String(s.inner_string(0)))
+                            Expr::Literal(s.inner_string(0).into())
                         }
                         len => {
                             let mut parts = Vec::with_capacity(len);
                             for p in x {
                                 match p.as_rule() {
-                                    Rule::inner_str => parts
-                                        .push(Expr::Literal(Value::String(p.as_str().to_owned()))),
+                                    Rule::inner_str => parts.push(Expr::Literal(p.as_str().into())),
                                     Rule::str_interp => parts.push(*parse_inner_expr(p)),
                                     _ => unreachable!(),
                                 }
