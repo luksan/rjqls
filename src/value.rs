@@ -4,7 +4,6 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 pub use serde_json::{Number, to_value, Value as JsonValue};
 
-use crate::interpreter::ast_eval::ExprResult;
 
 pub type Value = JsonValue;
 
@@ -21,7 +20,6 @@ pub trait ValueOps {
 
     fn length(&self) -> Result<Value>;
 
-    fn to_expr_result(self) -> ExprResult<'static>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,9 +148,5 @@ impl ValueOps for Value {
             Value::Object(o) => o.len(),
         };
         Ok(Value::Number(Number::from(len)))
-    }
-
-    fn to_expr_result(self) -> ExprResult<'static> {
-        Ok(self.into())
     }
 }

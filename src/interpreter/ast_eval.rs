@@ -215,7 +215,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             // TODO this should bifurcate the execution
             BindVars::bind(&v?, vars, self.variables.borrow().deref())?;
         }
-        self.input.clone().to_expr_result()
+        expr_val_from_value(self.input.clone())
     }
 
     fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> ExprResult<'e> {
@@ -276,7 +276,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_dot(&self) -> ExprResult<'e> {
-        self.input.clone().to_expr_result()
+        expr_val_from_value(self.input.clone())
     }
 
     fn visit_ident(&self, ident: &str) -> ExprResult<'e> {
