@@ -223,13 +223,13 @@ impl AstInterpreter {
 
 #[cfg(test)]
 mod test {
-    use serde_json::to_value;
+    use std::str::FromStr;
 
     use super::*;
 
     /// Parse a Value from JSON data
     fn jval(v: &str) -> Value {
-        serde_json::from_str(v).unwrap()
+        Value::from_str(v).unwrap()
     }
 
     #[test]
@@ -246,8 +246,8 @@ mod test {
         )
         .unwrap();
 
-        let x = intr.eval_input(to_value(1).unwrap()).unwrap();
-        assert_eq!(x[0], to_value([4.0, 5.0, 6.0]).unwrap())
+        let x = intr.eval_input(Value::from(1)).unwrap();
+        assert_eq!(x[0], Value::from_str("[4.0, 5.0, 6.0]").unwrap())
     }
 
     mod test_eval {
@@ -258,7 +258,7 @@ mod test {
               #[test]
               fn $test_name() {
                   let mut i = AstInterpreter::new($prog).unwrap();
-                  let input = serde_json::from_str($input).unwrap();
+                  let input = Value::from_str($input).unwrap();
                   let output = i.eval_input(input).unwrap();
                   let expect: Vec<_> = [$($expect)+].into_iter().map(jval).collect();
                   assert_eq!(&output, &expect);
@@ -290,6 +290,6 @@ mod test {
         let input = jval("[1,2,3]");
         let mut i = AstInterpreter::new(prog).unwrap();
         let v = i.eval_input(input).unwrap();
-        assert_eq!(v[0], to_value(3).unwrap())
+        assert_eq!(v[0], Value::from(3))
     }
 }

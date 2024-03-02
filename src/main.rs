@@ -8,7 +8,7 @@ use tracing::trace;
 use tracing_subscriber::EnvFilter;
 
 use rjqls::interpreter::AstInterpreter;
-use rjqls::value::Value;
+use rjqls::value::{ArcValue, JsonValue, Value};
 
 #[derive(Bpaf, Clone, Debug)]
 struct CommonOpts {
@@ -92,7 +92,7 @@ fn read_value_from_stdin() -> Result<Option<Value>> {
             return ret;
         }
         ret = serde_json::from_str(&input)
-            .map(Some)
+            .map(|json_val: JsonValue| Some(ArcValue::from(json_val)))
             .context("JSON value parse error");
         if ret.is_ok() {
             return ret;
@@ -124,9 +124,7 @@ fn build_input_value_iterator(
         });
         if !copts.raw_input {
             return Box::new(raw_values.map(|res| {
-                res.and_then(|v| {
-                    serde_json::from_str(v.as_str().unwrap()).context("JSON parse error")
-                })
+                res.and_then(|v| v.as_str().unwrap().parse().context("JSON parse error"))
             }));
         }
         return Box::new(raw_values);

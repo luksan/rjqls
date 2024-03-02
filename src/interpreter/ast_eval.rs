@@ -6,14 +6,13 @@ use std::sync::{Arc, RwLock};
 
 use anyhow::{bail, Context, Result};
 use onig::{Regex, RegexOptions, Syntax};
-use serde_json::{Map, to_value};
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
-use crate::value::{Value, ValueOps};
+use crate::value::{Map, Value, ValueOps};
 
 #[derive(Debug)]
 pub struct VarScope {
@@ -144,7 +143,7 @@ impl<'f> ExprEval<'f> {
                                     obj.insert("string".to_owned(), txt.into());
                                     obj.insert("length".to_owned(), len);
                                 } else {
-                                    obj.insert("offset".to_owned(), to_value(-1).unwrap());
+                                    obj.insert("offset".to_owned(), Value::from(-1));
                                     obj.insert("string".to_owned(), ().into());
                                     obj.insert("length".to_owned(), 0.into());
                                 }
@@ -154,7 +153,10 @@ impl<'f> ExprEval<'f> {
                             .collect();
 
                         re.foreach_name(|name, pos| {
-                            subs[pos[0] as usize - 1]["name"] = to_value(name).unwrap();
+                            subs[pos[0] as usize - 1]
+                                .as_mut_obj()
+                                .unwrap()
+                                .insert("name".to_owned(), name.into());
                             true
                         });
 
@@ -344,7 +346,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_object(&self, members: &'e [Expr]) -> ExprResult<'e> {
-        let mut objects: Vec<Map<String, Value>> = vec![Map::default()];
+        let mut objects: Vec<Map> = vec![Map::default()];
         for member in members {
             assert!(matches!(member, Expr::ObjectEntry { .. }));
             let mut keyvals = member.accept(self)?;
@@ -446,7 +448,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
 #[cfg(test)]
 mod test {
-    use serde_json::to_value;
+    use std::str::FromStr;
 
     use crate::parser::parse_filter;
 
@@ -454,7 +456,7 @@ mod test {
 
     #[test]
     fn test_expr_eval() {
-        let array = to_value([1, 2, 3]).unwrap();
+        let array = Value::from_str("[1, 2, 3]").unwrap();
         let filter = ". as [$a, $b] | $a + $b";
         let result = eval_expr(filter, array).unwrap();
         for _v in result {
@@ -482,10 +484,10 @@ mod test {
 
     #[test]
     fn test_regex_match() {
-        let filter = r#"match("c(d)e") | [.string, .offset, .captures[0]]"#;
+        let filter = r#"match("c(d)e") | [.string, .offset]"#;
         let input: Value = "abcde".into();
         let val = eval_expr(filter, input).unwrap();
-        assert_eq!(format!("{val:?}"), r#""#)
+        assert_eq!(format!("{val:?}"), r#"[Array([String("cde"), Number(2)])]"#)
     }
 
     fn eval_expr(filter: &str, input: Value) -> Result<Vec<Value>> {

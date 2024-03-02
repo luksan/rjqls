@@ -2,17 +2,17 @@ use std::cell::RefCell;
 use std::iter;
 
 use anyhow::{bail, Result};
-use serde_json::Map;
 use tracing::{instrument, trace};
 
 use crate::interpreter::ast_eval::VarScope;
 use crate::parser::expr_ast::{Expr, ExprVisitor};
+use crate::value::ArcObj;
 use crate::value::Value;
 
 pub struct BindVars<'v, 'r> {
     scope: &'r VarScope,
     val_iter: RefCell<ValIter<'v>>,
-    current_obj: RefCell<Option<&'v Map<String, Value>>>,
+    current_obj: RefCell<Option<&'v ArcObj>>,
     curr_obj_val: RefCell<&'v Value>,
 }
 
@@ -39,7 +39,7 @@ impl<'v, 'r> BindVars<'v, 'r> {
         }
     }
 
-    fn expect_object(&self) -> Result<Option<&'v Map<String, Value>>> {
+    fn expect_object(&self) -> Result<Option<&'v ArcObj>> {
         let object = self.val_iter.borrow_mut().next();
         if let Some(Value::Object(map)) = object {
             Ok(self.current_obj.replace(Some(map)))
