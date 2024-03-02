@@ -12,11 +12,8 @@ fn get_pratt_parser() -> &'static PrattParser<Rule> {
 fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
         .op(Op::infix(Rule::colon, Assoc::Left))
-        .op(
-            Op::infix(Rule::pipe, Assoc::Left)  // pipe and comma have the same precedence
-            | Op::infix(Rule::comma, Assoc::Left)
-            | Op::infix(Rule::idx_chain_pipe, Assoc::Left), // virtual pipe in index chain
-        )
+        .op(Op::infix(Rule::pipe, Assoc::Right))
+        .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left)
             | Op::infix(Rule::assign, Assoc::Left)
@@ -33,6 +30,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::infix(Rule::mul, Assoc::Left)
             | Op::infix(Rule::div, Assoc::Left)
             | Op::infix(Rule::mod_, Assoc::Left))
+        .op(Op::infix(Rule::idx_chain_pipe, Assoc::Right)) // virtual pipe in index chain
         .op(Op::postfix(Rule::index) | Op::postfix(Rule::iterate) | Op::postfix(Rule::slice))
         .op(Op::postfix(Rule::try_postfix))
 }
@@ -393,10 +391,16 @@ mod test_parser {
             [array_empty, "[]"]
             [array_1, "[1]"]
             [array_2, "[1,2]"]
+            [array_from_idx, "[.a,.b,.c[0]]"]
             [obj_empty, "{}"]
             [obj_a, "{a: 1}"]
 
-            [chained_index_try, ".[1][2]?[3]", ".[1]|.[2]?[3]"]
+            [idx_ident, ".a"]
+
+            [chained_index_try, ".[1]?[2]?[3]"]
+            [comma_idx_try, "1,2,.a[2]?", "1,2,.a.[2]?"]
+            [idx_chained_ident, ".a.b.c"]
+            [idx_chained_try_ident, ".a?.b?.c?"]
             [str_int, r#""x\(1 + 2)x""#]
             [func_in_func, "f1(def f2($a): 3; 2)", "f1(def f2(a): a as $a|3; 2)"]
             [nested_recurse,"def recurse(f): def r: .,(f|r); r; 1"],
@@ -408,12 +412,15 @@ mod test_parser {
             [try1, "try 1"],
             [try_catch, "try 1 catch 2"],
             [try_postfix, "1?", "try 1"],
-            [try_binding, ". + .[1][2]?", ". + .[1]|.[2]?"]
+            [try_binding, ". + .[1][2]?"]
         ];
 
         fn assert_ast_fmt(filter: &str, ref_flt: &str) {
             let ast = parse_pratt_ast(filter).unwrap();
             let str_rep = format!("{ast}");
+            if str_rep != ref_flt {
+                println!("{ast:#?}");
+            }
             assert_eq!(
                 &str_rep, ref_flt,
                 "AST fmt didn't match with reference (right)"
@@ -440,6 +447,7 @@ mod test_parser {
             [empty_string, "\"\"", "Literal(String(\"\"))"]
             [array, "[1,2]", "Array([Literal(Number(1)), Literal(Number(2))])"]
 
+            [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
             [iter, ".[]", "Index(Dot, None)"]
             [idx_item, ".a", r#"Index(Dot, Some(Ident("a")))"#],
             [idx_string, r#"."a""#, r#"Index(Dot, Some(Literal(String("a"))))"#]
@@ -448,12 +456,14 @@ mod test_parser {
             [idx_int, ".[1]", "Index(Dot, Some(Literal(Number(1))))"]
             [idx_var_ident, "$a.b", r#"Index(Variable("a"), Some(Ident("b")))"#]
             [idx_var_brkt, "$a.[1]", r#"Index(Variable("a"), Some(Literal(Number(1))))"#]
-            [idx_chain, ".[1][2]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(Dot, Some(Literal(Number(2)))))"]
-            [idx_chain_dot, r#".[1].[2]"#, "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(Dot, Some(Literal(Number(2)))))"]
-            [idx_chain_dot_str, r#"."a"."b""#, r#"Pipe(Index(Dot, Some(Literal(String("a")))), Index(Dot, Some(Literal(String("b")))))"#]
-            [idx_chain_str_brkt, r#"."a"[1]"#, r#"Pipe(Index(Dot, Some(Literal(String("a")))), Index(Dot, Some(Literal(Number(1)))))"#]
+            [idx_chain, ".[1][2]", "Index(Index(Dot, Some(Literal(Number(1)))), Some(Literal(Number(2))))"]
+            [idx_chain_dot, r#".[1].[2]"#, "Index(Index(Dot, Some(Literal(Number(1)))), Some(Literal(Number(2))))"]
+            [idx_chain_dot_str, r#"."a"."b""#, r#"Index(Index(Dot, Some(Literal(String("a")))), Some(Literal(String("b"))))"#]
+            [idx_chain_str_brkt, r#"."a"[1]"#, r#"Index(Index(Dot, Some(Literal(String("a")))), Some(Literal(Number(1))))"#]
             [idx_chain_try, ".[1][2]?[3]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
-            [idx_dot_infix,".a.b",r#"Pipe(Index(Dot, Some(Ident("a"))), Index(Dot, Some(Ident("b"))))"#]
+            [idx_dot_infix,".a.b",r#"Index(Index(Dot, Some(Ident("a"))), Some(Ident("b")))"#]
+
+            [idx_precedence_1, ". * .[0]?", "BinOp(Mul, Dot, TryCatch(Index(Dot, Some(Literal(Number(0)))), None))"]
             [slice, ".[1:2]", "Slice(Dot, Some(Literal(Number(1))), Some(Literal(Number(2))))"]
             [slice_start, ".[1:]", "Slice(Dot, Some(Literal(Number(1))), None)"]
             [slice_end, ".[:1]", "Slice(Dot, None, Some(Literal(Number(1))))"]

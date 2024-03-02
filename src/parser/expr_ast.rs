@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -376,12 +376,20 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     }
 
     fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> () {
-        expr.accept(self);
-        self.putc('[');
-        if let Some(idx) = idx {
-            idx.accept(self)
+        if self.r.borrow().as_bytes().last() != Some(&b']') || !matches!(expr, Expr::Dot) {
+            // don't emit redundant dots
+            expr.accept(self);
         }
-        self.putc(']');
+        if let Some(Expr::Ident(ident)) = idx {
+            if !matches!(expr, Expr::Dot) {
+                self.putc('.');
+            }
+            self.puts(ident);
+        } else {
+            self.putc('[');
+            idx.as_deref().map(|idx| idx.accept(self));
+            self.putc(']');
+        }
     }
 
     fn visit_literal(&self, lit: &Value) -> () {
@@ -413,7 +421,9 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
 
     fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> () {
         lhs.accept(self);
-        self.putc('|');
+        if !matches!(lhs, Expr::Index(_, _)) || !ChainedIndexPipeRemover::check(rhs) {
+            self.putc('|');
+        }
         rhs.accept(self);
     }
 
@@ -465,5 +475,46 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     fn visit_variable(&self, name: &str) -> () {
         self.putc('$');
         self.puts(name);
+    }
+}
+
+struct ChainedIndexPipeRemover {
+    is_chained_idx: Cell<bool>,
+}
+
+impl ChainedIndexPipeRemover {
+    fn new() -> Self {
+        Self {
+            is_chained_idx: true.into(),
+        }
+    }
+
+    fn check(expr: &Expr) -> bool {
+        let s = Self::new();
+        expr.accept(&s);
+        s.is_chained_idx.get()
+    }
+}
+
+impl ExprVisitor<'_, ()> for ChainedIndexPipeRemover {
+    fn default(&self) {
+        self.is_chained_idx.set(false);
+    }
+
+    fn visit_dot(&self) {
+        // dot found, we're done
+    }
+
+    fn visit_index(&self, expr: &'_ Expr, _idx: Option<&'_ Expr>) {
+        expr.accept(self)
+    }
+
+    fn visit_try_catch(&self, try_expr: &'_ Expr, catch_expr: Option<&'_ Expr>) {
+        if catch_expr.is_some() {
+            // not a postfix try
+            self.default();
+            return;
+        }
+        try_expr.accept(self)
     }
 }
