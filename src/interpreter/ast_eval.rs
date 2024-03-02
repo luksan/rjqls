@@ -122,7 +122,7 @@ impl<'f> ExprEval<'f> {
                 let re = Regex::with_options(regex, regex_opts, Syntax::perl_ng())
                     .context("Invalid regular expression")?;
 
-                let caps: Vec<_> = re
+                let caps: Vec<Value> = re
                     .captures_iter(input)
                     .map(|cap| {
                         let mut obj = Map::new();
@@ -130,13 +130,15 @@ impl<'f> ExprEval<'f> {
                         obj.insert("offset".to_owned(), cap.offset().into());
                         obj.insert("length".to_owned(), mtch.len().into());
                         obj.insert("string".to_owned(), mtch.into());
-                        let mut subs: Vec<_> = cap
+                        let mut subs: Vec<Value> = cap
                             .iter_pos()
                             .skip(1)
                             .map(|tuple_opt| {
                                 let mut obj = Map::new();
                                 if let Some((start, end)) = tuple_opt {
-                                    let txt = mtch[start..end].to_owned();
+                                    let a = start - cap.offset();
+                                    let b = end - cap.offset();
+                                    let txt = mtch[a..b].to_owned();
                                     let len = txt.len().into();
                                     obj.insert("offset".to_owned(), start.into());
                                     obj.insert("string".to_owned(), txt.into());
@@ -147,7 +149,7 @@ impl<'f> ExprEval<'f> {
                                     obj.insert("length".to_owned(), 0.into());
                                 }
                                 obj.insert("name".to_owned(), ().into());
-                                obj
+                                obj.into()
                             })
                             .collect();
 
@@ -470,12 +472,20 @@ mod test {
     #[test]
     fn test_if_else() {
         let filter = r#"if .[] then "hej" elif .[] == false then "hmm" else 4 end"#;
-        let input = serde_json::from_str("[1,false,3]").unwrap();
+        let input = Value::from_str("[1,false,3]").unwrap();
         let val = eval_expr(filter, input).unwrap();
         assert_eq!(
             format!("{val:?}"),
             r#"[String("hej"), Number(4), String("hmm"), Number(4), String("hej")]"#
         )
+    }
+
+    #[test]
+    fn test_regex_match() {
+        let filter = r#"match("c(d)e") | [.string, .offset, .captures[0]]"#;
+        let input: Value = "abcde".into();
+        let val = eval_expr(filter, input).unwrap();
+        assert_eq!(format!("{val:?}"), r#""#)
     }
 
     fn eval_expr(filter: &str, input: Value) -> Result<Vec<Value>> {
