@@ -116,7 +116,9 @@ impl Expr {
             Expr::ObjectEntry { key, value } => visitor.visit_obj_entry(key, value),
             Expr::ObjMember(k) => visitor.visit_obj_member(k),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
-            Expr::Reduce(input, var, init, update) => unimplemented!(),
+            Expr::Reduce(input, var, init, update) => {
+                visitor.visit_reduce(input, var, init, update)
+            }
             Expr::Scope(s) => visitor.visit_scope(s),
             Expr::Slice(expr, start, end) => {
                 visitor.visit_slice(expr, start.as_deref(), end.as_deref())
@@ -218,6 +220,12 @@ pub trait ExprVisitor<'e, R> {
     fn visit_pipe(&self, lhs: &'e Expr, rhs: &'e Expr) -> R {
         lhs.accept(self);
         rhs.accept(self);
+        self.default()
+    }
+    fn visit_reduce(&self, input: &'e Expr, var: &'e str, init: &'e Expr, update: &'e Expr) -> R {
+        input.accept(self);
+        init.accept(self);
+        update.accept(self);
         self.default()
     }
     fn visit_scope(&self, inner: &'e Expr) -> R {
