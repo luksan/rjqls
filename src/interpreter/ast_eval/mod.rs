@@ -151,7 +151,7 @@ fn expr_val_from_value(val: Value) -> ExprResult<'static> {
 
 impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn default(&self) -> ExprResult<'e> {
-        panic!();
+        panic!("Missing func impl in ExprVisitor for ExprEval.");
     }
 
     fn visit_array(&self, elements: &'e [Expr]) -> ExprResult<'e> {
@@ -359,6 +359,37 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         r
     }
 
+    fn visit_slice(
+        &self,
+        expr: &'e Expr,
+        start: Option<&'e Expr>,
+        end: Option<&'e Expr>,
+    ) -> ExprResult<'e> {
+        let val = expr.accept(self)?;
+        let mut ret = vec![];
+        // TODO: lazy eval
+        for v in val {
+            let v = v?;
+            let start = if let Some(start) = start {
+                start.accept(self)?
+            } else {
+                expr_val_from_value(Value::from(0))?
+            };
+            for s in start {
+                let s = s?;
+                let end = if let Some(end) = end {
+                    end.accept(self)?
+                } else {
+                    expr_val_from_value(Value::from(v.length()?))?
+                };
+                for e in end {
+                    ret.push(v.slice(&s, &e?));
+                }
+            }
+        }
+        Ok(Generator::from_iter(ret.into_iter()))
+    }
+
     fn visit_string_interp(&self, parts: &'e [Expr]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
@@ -425,6 +456,14 @@ mod test {
         let filter = "(3 as $a | $a) | $a";
         let err = eval_expr(filter, ().into()).unwrap_err();
         assert_eq!(&err.to_string(), "Variable 'a' is not defined.")
+    }
+
+    #[test]
+    fn test_slice_array() {
+        let filter = r#".[1:3]"#;
+        let input = Value::from_str("[1,2,3,4,5,6]").unwrap();
+        let val = eval_expr(filter, input).unwrap();
+        assert_eq!(format!("{}", val[0]), r#"[2,3]"#)
     }
 
     #[test]

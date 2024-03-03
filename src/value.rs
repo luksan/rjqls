@@ -55,6 +55,21 @@ impl Debug for ArcArray {
     }
 }
 
+impl Display for ArcArray {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let mut first = true;
+        for v in self.0.iter() {
+            if !first {
+                write!(f, ",")?;
+            }
+            first = false;
+            write!(f, "{v}")?
+        }
+        write!(f, "]")
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct ArcNum(JsonNumber);
 impl From<JsonNumber> for ArcNum {
@@ -296,7 +311,7 @@ impl FromStr for ArcValue {
 impl Display for ArcValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArcValue::Array(a) => write!(f, "{a:?}"),
+            ArcValue::Array(a) => write!(f, "{a}"),
             ArcValue::Bool(b) => write!(f, "{b:?}"),
             ArcValue::Number(n) => {
                 write!(f, "{n:?}")
@@ -309,6 +324,32 @@ impl Display for ArcValue {
                 let s = s.0.as_str();
                 write!(f, "\"{s}\"")
             }
+        }
+    }
+}
+
+impl ArcValue {
+    pub fn slice(&self, start: &Self, end: &Self) -> Result<Self> {
+        let start = start.as_u64().context("Start index must be integer")? as usize;
+        let end = end.as_u64().context("end index must be integer")? as usize;
+        match self {
+            ArcValue::Array(a) => {
+                let input = &a.0;
+                let len = input.len();
+                let start = start.min(len);
+                let end = end.min(len);
+                let new = Vec::from(&input[start..end]);
+                Ok(Self::from(new))
+            }
+            ArcValue::String(s) => {
+                let input = &s.0;
+                let len = input.len();
+                let start = start.min(len);
+                let end = end.min(len);
+                let new = input[start..end].to_owned(); // FIXME: slice at UTF boundaries
+                Ok(Self::from(new))
+            }
+            _ => bail!("Only arrays and strings can be sliced."),
         }
     }
 }
