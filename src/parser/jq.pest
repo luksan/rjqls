@@ -1,5 +1,5 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
+COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
 
 char = {
     !("\"" | "\\") ~ ANY
@@ -21,7 +21,8 @@ func_def = {
 jq_module = { SOI ~ (func_def | module_directive)* ~ EOI }
 path_string = ${"\"" ~ inner_str ~ "\""}
 
-included_src = _{ func_def* ~ pratt_expr? }
+included_src = _{ SOI ~ (pratt_expr | func_def*) ~ eoi }
+eoi = _{ !ANY } // Silent EOI
 
 /// Everything below is for pratt parsing of filter expressions
 
