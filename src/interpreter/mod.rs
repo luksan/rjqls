@@ -7,9 +7,9 @@ use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
 
 use crate::parser;
+use crate::parser::{JqModule, OwnedFunc, parse_module};
 use crate::parser::expr_ast::{Ast, Expr};
-use crate::parser::{parse_module, JqModule, OwnedFunc};
-use crate::value::Value;
+use crate::value::{ArcValue, Value};
 
 pub mod ast_eval;
 mod bind_var_pattern;
@@ -188,6 +188,7 @@ pub struct BoundFunc<'e> {
 pub struct AstInterpreter {
     builtins: Vec<OwnedFunc>,
     root_filter: Ast,
+    variables: Arc<VarScope>,
 }
 
 impl AstInterpreter {
@@ -197,12 +198,17 @@ impl AstInterpreter {
         let this = Self {
             builtins: builtin.functions,
             root_filter,
+            variables: VarScope::new(),
         };
         Ok(this)
     }
 
+    pub fn set_variable(&self, name: String, value: ArcValue) {
+        self.variables.set_variable(name.as_str(), value);
+    }
+
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
-        let var_scope = VarScope::new();
+        let var_scope = self.variables.clone();
         let mut func_scope = FuncScope::default();
         for f in self.builtins.iter() {
             func_scope.push(f.name.clone(), f.args.clone().into(), &f.filter);

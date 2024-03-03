@@ -188,6 +188,10 @@ fn main() -> Result<()> {
     let mut prog = AstInterpreter::new(&filter_str)?;
     let mut inputs = build_input_value_iterator(&copts, input_files);
 
+    for Arg { name, value, .. } in copts.arg {
+        prog.set_variable(name, Value::from(value))
+    }
+
     if copts.slurp {
         let input = if !copts.raw_input {
             let inputs: Result<Vec<_>> = inputs.collect();
