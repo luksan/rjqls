@@ -7,8 +7,10 @@ char = {
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
-program = { SOI ~  pratt_expr ~ ("," ~ pratt_expr)* ~ EOI }
+program = _{ SOI ~ (include_directive)* ~ pratt_expr ~ EOI }
 
+include_directive = {"include"  ~ "\"" ~ inner_str ~ "\"" ~ pratt_expr? ~ ";"}
+module_directive = {"module" ~ pratt_expr ~ ";"}
 // func_def is a prefix in pratt_expr
 func_def = {
     "def" ~ ident ~
@@ -17,7 +19,9 @@ func_def = {
 }
 
 jq_module = { SOI ~ (func_def | module_directive)* ~ EOI }
-module_directive = {"module" ~ pratt_expr ~ ";"}
+path_string = ${"\"" ~ inner_str ~ "\""}
+
+included_src = _{ func_def* ~ pratt_expr? }
 
 /// Everything below is for pratt parsing of filter expressions
 
@@ -34,7 +38,7 @@ bool = { "true" | "false" }
 literal = { number | bool | null } // string is parsed separately
 
 ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  (ASCII_ALPHA|"_") ~ ( ASCII_ALPHANUMERIC | "_" )* }
-keywords = { "and"|"as"|"break"|"catch"|"foreach"|"if"|"then"|"else"|"elif"|"end"|"label"|"or"|"reduce"|"try" }
+keywords = { "and"|"as"|"break"|"catch"|"foreach"|"if"|"then"|"else"|"elif"|"end"|"label"|"or"|"reduce"|"try"|"import"|"include"|"module" }
 
 obj = {
     "{" ~ "}" |

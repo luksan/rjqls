@@ -7,9 +7,9 @@ use std::sync::{Arc, RwLock};
 use anyhow::{bail, Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
-use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
+use crate::interpreter::BoundFunc;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Map, Value, ValueOps};
 
@@ -389,7 +389,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 mod test {
     use std::str::FromStr;
 
-    use crate::parser::parse_filter;
+    use pest::Parser;
+
+    use crate::parser::pratt_expr::pratt_parser;
+    use crate::parser::{parse_program, JqGrammar, Rule};
 
     use super::*;
 
@@ -430,6 +433,22 @@ mod test {
         assert_eq!(val[0], out_ref)
     }
 
+    #[test]
+    fn test_include() {
+        let filter = r#"include "tests/test_include.jq"; func_a"#;
+        let ast = parse_program(filter).unwrap();
+        let scope = Arc::new(FuncScope::default());
+        let var_scope = VarScope::new();
+        let eval = ExprEval::new(scope, Value::Null, var_scope);
+        let rvals: Vec<_> = ast
+            .accept(&eval)
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let x = &rvals[0];
+        assert_eq!(x, &Value::from(1));
+    }
+
     fn eval_expr(filter: &str, input: Value) -> Result<Vec<Value>> {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
@@ -437,5 +456,12 @@ mod test {
         let ast = parse_filter(filter).unwrap();
         let rvals = ast.accept(&eval)?.collect();
         rvals
+    }
+
+    fn parse_filter(filter: &str) -> Result<Ast> {
+        let mut pairs = JqGrammar::parse(Rule::pratt_prog, filter).context("Parse error")?;
+        let mut pairs = pairs.next().unwrap().into_inner();
+        let pairs = pairs.next().unwrap().into_inner();
+        Ok(pratt_parser(pairs))
     }
 }

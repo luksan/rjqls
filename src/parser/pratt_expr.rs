@@ -1,8 +1,8 @@
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
-use crate::parser::{PairExt, PRATT_PARSER, Rule};
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
+use crate::parser::{PairExt, Rule, PRATT_PARSER};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -141,7 +141,7 @@ pub fn parse_func_def(p: Pair<Rule>) -> (String, Vec<String>, Ast) {
     }
 }
 
-pub fn pratt_parser(pairs: Pairs<Rule>) -> Ast {
+pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
     let pratt = get_pratt_parser();
 
     fn parse_inner_expr(pair: Pair<Rule>) -> Ast {

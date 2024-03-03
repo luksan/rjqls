@@ -1,10 +1,11 @@
+use std::path::Path;
 use std::sync::OnceLock;
 
 use anyhow::Context;
 use anyhow::Result;
 use pest::iterators::Pair;
-use pest::pratt_parser::PrattParser;
 use pest::Parser;
+use pest::pratt_parser::PrattParser;
 
 use crate::parser::expr_ast::Ast;
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
@@ -17,13 +18,6 @@ pub mod pratt_expr;
 pub struct JqGrammar;
 
 static PRATT_PARSER: OnceLock<PrattParser<Rule>> = OnceLock::new();
-
-pub fn parse_filter(filter: &str) -> Result<Ast> {
-    let mut pairs = JqGrammar::parse(Rule::pratt_prog, filter).context("Parse error")?;
-    let mut pairs = pairs.next().unwrap().into_inner();
-    let pairs = pairs.next().unwrap().into_inner();
-    Ok(pratt_parser(pairs))
-}
 
 trait PairExt {
     fn inner_string(self, level: usize) -> String;
@@ -38,16 +32,37 @@ impl PairExt for Pair<'_, Rule> {
     }
 }
 
+pub fn read_module_text(rel_path_str: impl AsRef<Path>) -> Result<String> {
+    let mut path = rel_path_str.as_ref().to_owned();
+    path.set_extension("jq");
+    // TODO: implement search paths
+
+    std::fs::read_to_string(&path).with_context(|| format!("Failed to read file {path:?}"))
+}
+
 pub fn parse_program(prog: &str) -> Result<Ast> {
-    let mut program_pairs = JqGrammar::parse(Rule::pratt_prog, prog)?;
-    let prog = program_pairs
-        .next()
-        .unwrap()
-        .into_inner()
-        .next()
-        .unwrap()
-        .into_inner();
-    let ast = pratt_parser(prog);
+    let mut program_pairs = JqGrammar::parse(Rule::program, prog)?;
+
+    let mut includes = vec![];
+    while matches!(
+        program_pairs.peek().map(|p| p.as_rule()),
+        Some(Rule::include_directive)
+    ) {
+        // TODO: recursive includes and other directives mixed in
+        let mut include = program_pairs.next().unwrap().into_inner();
+        let path = include.next().unwrap().as_str();
+        let _metadata = include.next();
+        let src = read_module_text(path)?;
+        includes.push(src);
+    }
+    let main_prog_tokens = program_pairs.next().unwrap().into_inner();
+
+    let token_iters: Vec<_> = includes
+        .iter()
+        .map(|src| JqGrammar::parse(Rule::included_src, &src))
+        .collect::<Result<_, _>>()?;
+
+    let ast = pratt_parser(token_iters.into_iter().flatten().chain(main_prog_tokens));
     Ok(ast)
 }
 
@@ -80,6 +95,11 @@ pub fn parse_module(code: &str) -> Result<JqModule> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_include() {
+        parse_program(r#"include "tests/test_include.jq"; ."#).unwrap();
+    }
 
     #[test]
     fn parse_func_def() -> Result<()> {
