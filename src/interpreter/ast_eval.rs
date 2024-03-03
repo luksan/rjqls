@@ -210,6 +210,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             let v = e.accept(self)?;
             ret = ret.chain(v.into_iter());
         }
+        // TODO: build array value with a closure
         expr_val_from_value(Value::from(ret.collect::<Result<Vec<_>>>()?))
     }
 
@@ -284,6 +285,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_ident(&self, ident: &str) -> ExprResult<'e> {
+        // TODO: make Ident a kind of Literal, remove Ident from AST
         expr_val_from_value(Value::from(ident))
     }
 
@@ -346,6 +348,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_object(&self, members: &'e [Expr]) -> ExprResult<'e> {
+        // TODO: change the type of members to something more specific
         let mut objects: Vec<Map> = vec![Map::default()];
         for member in members {
             assert!(matches!(member, Expr::ObjectEntry { .. }));
