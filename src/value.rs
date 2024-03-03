@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use indexmap::IndexMap;
 use serde_json::Number as JsonNumber;
 pub use serde_json::to_value as to_json_value;
 pub use serde_json::Value as JsonValue;
@@ -13,7 +13,7 @@ pub type Value = ArcValue;
 // pub type Map = JsonObj<String, JsonValue>;
 pub type Map = ObjBuilder;
 
-pub type ObjMap = HashMap<String, ArcValue>;
+pub type ObjMap = IndexMap<String, ArcValue>;
 
 pub trait ValueOps: Sized {
     fn add(&self, other: &Self) -> Result<Self>;
@@ -79,8 +79,8 @@ impl Display for ArcObj {
         for (k, v) in self.0.iter() {
             if !first {
                 write!(f, ",")?;
-                first = true;
             }
+            first = false;
             write!(f, "\"{k}\":{v}")?
         }
         write!(f, "}}")
@@ -111,7 +111,7 @@ impl ObjBuilder {
         Self(ArcValue::Object(ArcObj::new()))
     }
 
-    fn get_mut_map(&mut self) -> &mut HashMap<String, ArcValue> {
+    fn get_mut_map(&mut self) -> &mut ObjMap {
         let ArcValue::Object(ArcObj(ref mut obj)) = self.0 else {
             unreachable!()
         };
@@ -124,7 +124,7 @@ impl ObjBuilder {
 }
 
 impl Deref for ObjBuilder {
-    type Target = HashMap<String, ArcValue>;
+    type Target = ObjMap;
 
     fn deref(&self) -> &Self::Target {
         let ArcValue::Object(ArcObj(ref obj)) = self.0 else {
