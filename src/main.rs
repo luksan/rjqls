@@ -12,6 +12,14 @@ use rjqls::value::{ArcValue, JsonValue, Value};
 
 #[derive(Bpaf, Clone, Debug)]
 struct CommonOpts {
+    #[bpaf(external, many)]
+    arg: Vec<Arg>,
+
+    /// By default, jq pretty-prints JSON output. Using this option will result in more compact
+    /// output by instead putting each JSON object on a single line.
+    #[bpaf(short('c'), long)]
+    compact_output: bool,
+
     /// Don't read any input at all. Instead, the filter is run once using null as the input.
     /// This is useful when using jq as a simple calculator or to construct JSON data from scratch.
     #[bpaf(short('n'), long)]
@@ -22,10 +30,32 @@ struct CommonOpts {
     #[bpaf(short('R'), long)]
     raw_input: bool,
 
+    /// With this option, if the filter's result is a string then it will be written directly to
+    /// standard output rather than being formatted as a JSON string with quotes.
+    /// This can be useful for making jq filters talk to non-JSON-based systems.
+    #[bpaf(short('r'), long)]
+    raw_output: bool,
+
     /// Instead of running the filter for each JSON object in the input, read the entire input stream
     /// into a large array and run the filter just once.
     #[bpaf(short('s'), long)]
     slurp: bool,
+}
+
+#[derive(Debug, Clone, Bpaf)]
+#[bpaf(adjacent)]
+struct Arg {
+    /// This option passes a value to the jq program as a predefined variable.
+    /// If you run jq with --arg foo bar, then $foo is available in the program and has the value "bar".
+    /// Note that value will be treated as a string, so --arg foo 123 will bind $foo to "123".
+    ///
+    /// Named arguments are also available to the jq program as $ARGS.named.
+    #[bpaf(long)]
+    arg: (),
+    #[bpaf(positional("name"))]
+    name: String,
+    #[bpaf(positional("value"))]
+    value: String,
 }
 
 /// Reimplementation of jq in rust as a learning exercise.
