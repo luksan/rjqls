@@ -72,6 +72,21 @@ impl Debug for ArcNum {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ArcObj(Arc<ObjMap>);
 
+impl Display for ArcObj {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        let mut first = true;
+        for (k, v) in self.0.iter() {
+            if !first {
+                write!(f, ",")?;
+                first = true;
+            }
+            write!(f, "\"{k}\":{v}")?
+        }
+        write!(f, "}}")
+    }
+}
+
 impl ArcObj {
     pub fn new() -> Self {
         Self(Default::default())
@@ -288,11 +303,11 @@ impl Display for ArcValue {
             }
             ArcValue::Null => write!(f, "null"),
             ArcValue::Object(o) => {
-                write!(f, "{o:?}")
+                write!(f, "{o}")
             }
             ArcValue::String(s) => {
                 let s = s.0.as_str();
-                write!(f, "{s}")
+                write!(f, "\"{s}\"")
             }
         }
     }
