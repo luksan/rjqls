@@ -51,6 +51,7 @@ struct Arg {
     ///
     /// Named arguments are also available to the jq program as $ARGS.named.
     #[bpaf(long)]
+    #[allow(unused)]
     arg: (),
     #[bpaf(positional("name"))]
     name: String,

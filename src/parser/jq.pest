@@ -30,9 +30,9 @@ plusminus = _{"+" | "-" }
 
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT*)? ~ ( ("e"|"E") ~ plusminus? ~ ASCII_DIGIT+)? }
 
-string = { "\"" ~ (inner_str | str_interp)* ~ "\"" }
+string = ${ "\"" ~ (inner_str | str_interp)* ~ "\"" }
 inner_str = @{ char+ }
-str_interp = { "\\(" ~ pratt_expr ~ ")" }
+str_interp = !{ "\\(" ~ pratt_expr ~ ")" }
 
 null = { "null" }
 bool = { "true" | "false" }

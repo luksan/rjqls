@@ -7,9 +7,9 @@ use std::sync::{Arc, RwLock};
 use anyhow::{bail, Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
+use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::interpreter::BoundFunc;
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Map, Value, ValueOps};
 
@@ -102,6 +102,20 @@ impl<'f> ExprEval<'f> {
 
             // Regex
             ("match", 1) => self.match_1(args)?,
+            ("split", 1) => {
+                let input = self
+                    .input
+                    .as_str()
+                    .context("split input  must be a string")?;
+                let sep_str = args[0].accept(self)?.next().context("Empty separator")??;
+                let sep = sep_str
+                    .as_str()
+                    .context("split separator must be a string")?;
+                // TODO: less copying of strings
+                expr_val_from_value(Value::from(
+                    input.split(sep).map(|s| Value::from(s)).collect::<Vec<_>>(),
+                ))?
+            }
 
             (_, len) => bail!("Function {name}/{len} not found."),
         })
@@ -391,8 +405,8 @@ mod test {
 
     use pest::Parser;
 
+    use crate::parser::{JqGrammar, parse_program, Rule};
     use crate::parser::pratt_expr::pratt_parser;
-    use crate::parser::{parse_program, JqGrammar, Rule};
 
     use super::*;
 
@@ -430,6 +444,15 @@ mod test {
         let input: Value = "abcde".into();
         let val = eval_expr(filter, input).unwrap();
         let out_ref = Value::from_str(r#"["cde", 2, "d", 1, "x"]"#).unwrap();
+        assert_eq!(val[0], out_ref)
+    }
+
+    #[test]
+    fn test_split_1() {
+        let filter = r#"split(" ")"#;
+        let input: Value = "a b c de ".into();
+        let val = eval_expr(filter, input).unwrap();
+        let out_ref = Value::from_str(r#"["a", "b", "c", "de", ""]"#).unwrap();
         assert_eq!(val[0], out_ref)
     }
 
