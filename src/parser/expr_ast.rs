@@ -50,6 +50,7 @@ pub type Ast = Box<Expr>;
 
 #[derive(Debug, PartialEq)]
 pub enum Expr {
+    Alternative(Ast, Ast),
     Array(Vec<Expr>),
     Assign(Ast, Ast),
     BindVars(Ast, Ast),
@@ -92,6 +93,7 @@ impl Expr {
     pub fn accept<'e, R>(&'e self, visitor: &(impl ExprVisitor<'e, R> + ?Sized)) -> R {
         trace!("Visiting {self:?}");
         match self {
+            Expr::Alternative(lhs, rhs) => visitor.visit_alternative(lhs, rhs),
             Expr::Array(r) => visitor.visit_array(r),
             Expr::Assign(lhs, rhs) => unimplemented!(),
             Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
@@ -144,6 +146,11 @@ impl Display for Expr {
 pub trait ExprVisitor<'e, R> {
     fn default(&self) -> R;
 
+    fn visit_alternative(&self, lhs: &'e Expr, defaults: &'e Expr) -> R {
+        lhs.accept(self);
+        defaults.accept(self);
+        self.default()
+    }
     fn visit_array(&self, elements: &'e [Expr]) -> R {
         for e in elements {
             e.accept(self);
@@ -296,6 +303,11 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         todo!()
     }
 
+    fn visit_alternative(&self, lhs: &'_ Expr, defaults: &'_ Expr) -> () {
+        lhs.accept(self);
+        self.puts("//");
+        defaults.accept(self);
+    }
     fn visit_array(&self, elements: &[Expr]) -> () {
         self.putc('[');
         let mut it = elements.iter();

@@ -241,7 +241,6 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                 | Rule::sub
                 | Rule::mul
                 | Rule::div
-                | Rule::alt
                 | Rule::and
                 | Rule::or
                 | Rule::ord
@@ -250,6 +249,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     let binop: BinOps = op.as_str().parse().unwrap();
                     Expr::BinOp(binop, lhs, rhs)
                 }
+                Rule::alt => Expr::Alternative(lhs, rhs),
                 Rule::as_ => Expr::BindVars(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),

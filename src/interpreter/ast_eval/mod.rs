@@ -118,6 +118,21 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         panic!("Missing func impl in ExprVisitor for ExprEval.");
     }
 
+    fn visit_alternative(&self, lhs: &'e Expr, defaults: &'e Expr) -> ExprResult<'e> {
+        let lhs = lhs.accept(self)?;
+        let mut ret = vec![];
+        for v in lhs {
+            let v = v?;
+            if v.is_truthy() {
+                ret.push(Ok(v))
+            }
+        }
+        if ret.is_empty() {
+            return defaults.accept(self);
+        }
+        Ok(Generator::from_iter(ret.into_iter()))
+    }
+
     fn visit_array(&self, elements: &'e [Expr]) -> ExprResult<'e> {
         let mut ret = Generator::empty();
         for e in elements {
