@@ -316,6 +316,28 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         Ok(ret)
     }
 
+    fn visit_reduce(
+        &self,
+        input: &'e Expr,
+        var: &'e str,
+        init: &'e Expr,
+        update: &'e Expr,
+    ) -> ExprResult<'e> {
+        let input = input.accept(self)?;
+        let Some(init) = init.accept(self)?.next() else {
+            return Ok(Generator::empty());
+        };
+        let mut acc = init?;
+        for v in input {
+            let mut update_eval = self.clone();
+            update_eval.begin_scope();
+            update_eval.variables.borrow_mut().set_variable(var, v?);
+            update_eval.input = acc.clone();
+            acc = update.accept(&update_eval)?.next().unwrap()?;
+        }
+        expr_val_from_value(acc)
+    }
+
     fn visit_scope(&self, inner: &'e Expr) -> ExprResult<'e> {
         self.begin_scope();
         let r = inner.accept(self);
@@ -456,6 +478,15 @@ mod test {
         let input: Value = "a b c de ".into();
         let val = eval_expr(filter, input).unwrap();
         let out_ref = Value::from_str(r#"["a", "b", "c", "de", ""]"#).unwrap();
+        assert_eq!(val[0], out_ref)
+    }
+
+    #[test]
+    fn test_reduce() {
+        let filter = r#"reduce .[] as $a (0; $a + .)"#;
+        let input: Value = "[1,2,3,4,5,6]".parse().unwrap();
+        let val = eval_expr(filter, input).unwrap();
+        let out_ref = Value::from(21.0);
         assert_eq!(val[0], out_ref)
     }
 
