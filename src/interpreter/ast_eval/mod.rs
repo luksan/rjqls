@@ -483,15 +483,6 @@ mod test {
     }
 
     #[test]
-    fn test_regex_match() {
-        let filter = r#"match("c(d)(?<x>e)") | [.string, .offset, .captures[0].string, .captures[0].length, .captures[1].name]"#;
-        let input: Value = "abcde".into();
-        let val = eval_expr(filter, input).unwrap();
-        let out_ref = Value::from_str(r#"["cde", 2, "d", 1, "x"]"#).unwrap();
-        assert_eq!(val[0], out_ref)
-    }
-
-    #[test]
     fn test_split_1() {
         let filter = r#"split(" ")"#;
         let input: Value = "a b c de ".into();

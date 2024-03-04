@@ -30,7 +30,6 @@ impl<'f> ExprEval<'f> {
             ("length", 0) => expr_val_from_value(self.input.length()?),
 
             // Regex
-            ("match", 1) => self.match_1(args),
             ("_match_impl", 3) => {
                 let [regex, mods, testmode] = args else {
                     unreachable!()
