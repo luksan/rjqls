@@ -79,6 +79,18 @@ impl From<JsonNumber> for ArcNum {
     }
 }
 
+impl ArcNum {
+    pub fn as_f64(&self) -> Option<f64> {
+        self.0.as_f64()
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        self.0
+            .as_u64() // FIXME: avoid converting int math to f64
+            .or_else(|| self.0.as_f64().map(|f| f as u64))
+    }
+}
+
 impl PartialOrd for ArcNum {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.0
@@ -238,7 +250,7 @@ impl ArcValue {
 
     pub fn as_f64(&self) -> Option<f64> {
         if let Self::Number(num) = self {
-            num.0.as_f64()
+            num.as_f64()
         } else {
             None
         }
@@ -246,7 +258,7 @@ impl ArcValue {
 
     pub fn as_u64(&self) -> Option<u64> {
         if let Self::Number(num) = self {
-            num.0.as_u64()
+            num.as_u64()
         } else {
             None
         }

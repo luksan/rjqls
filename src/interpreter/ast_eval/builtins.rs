@@ -27,6 +27,22 @@ impl<'f> ExprEval<'f> {
                         .collect::<Vec<_>>(),
                 ))
             }
+            ("implode", 0) => {
+                let input = self
+                    .input
+                    .as_array()
+                    .context("implode input must be an array")?;
+                expr_val_from_value(Value::from(
+                    input
+                        .iter()
+                        .map(|c| {
+                            c.as_u64()
+                                .context("Unicode codepoints must be numeric")
+                                .and_then(|i| char::from_u32(i as _).context("Invalid codepoint"))
+                        })
+                        .collect::<Result<String>>()?,
+                ))
+            }
             ("length", 0) => expr_val_from_value(self.input.length()?),
 
             // Regex
