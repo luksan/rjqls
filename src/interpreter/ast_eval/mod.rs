@@ -13,6 +13,7 @@ use crate::interpreter::generator::{Generator, ResVal};
 use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
 use crate::value::{Map, Value, ValueOps};
 
+mod builtins;
 mod regex;
 
 #[derive(Debug)]
@@ -82,43 +83,6 @@ impl<'f> ExprEval<'f> {
         let func = scope.get_func(name, args.len())?;
         let ret = func.bind(name.to_owned(), scope.clone(), args).unwrap();
         Some(ret)
-    }
-
-    fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> ExprResult<'expr>
-    where
-        'f: 'expr,
-        'expr: 'f,
-    {
-        Ok(match (name, args.len()) {
-            ("add", 0) => {
-                let mut sum: Value = ().into();
-                for v in self.input.iterate()? {
-                    sum = sum.add(v)?;
-                }
-                expr_val_from_value(sum)?
-            }
-            ("empty", 0) => Default::default(),
-            ("length", 0) => expr_val_from_value(self.input.length()?)?,
-
-            // Regex
-            ("match", 1) => self.match_1(args)?,
-            ("split", 1) => {
-                let input = self
-                    .input
-                    .as_str()
-                    .context("split input  must be a string")?;
-                let sep_str = args[0].accept(self)?.next().context("Empty separator")??;
-                let sep = sep_str
-                    .as_str()
-                    .context("split separator must be a string")?;
-                // TODO: less copying of strings
-                expr_val_from_value(Value::from(
-                    input.split(sep).map(|s| Value::from(s)).collect::<Vec<_>>(),
-                ))?
-            }
-
-            (_, len) => bail!("Function {name}/{len} not found."),
-        })
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
