@@ -15,10 +15,39 @@ impl<'f> ExprEval<'f> {
                 expr_val_from_value(sum)
             }
             ("empty", 0) => Ok(Default::default()),
+            ("explode", 0) => {
+                let input = self
+                    .input
+                    .as_str()
+                    .context("explode input must be a string")?;
+                expr_val_from_value(Value::from(
+                    input
+                        .chars()
+                        .map(|c| Value::from(c as usize))
+                        .collect::<Vec<_>>(),
+                ))
+            }
             ("length", 0) => expr_val_from_value(self.input.length()?),
 
             // Regex
             ("match", 1) => self.match_1(args),
+            ("_match_impl", 3) => {
+                let [regex, mods, testmode] = args else {
+                    unreachable!()
+                };
+                let mut ret = vec![];
+                for regex in regex.accept(self)? {
+                    let regex = regex?; // TODO: push the error?
+                    for mods in mods.accept(self)? {
+                        let mods = mods?;
+                        for testmode in testmode.accept(self)? {
+                            let caps = regex::f_match(&self.input, &regex, &mods, &testmode?);
+                            ret.push(caps);
+                        }
+                    }
+                }
+                Ok(Generator::from_iter(ret.into_iter()))
+            }
             ("split", 1) => {
                 let input = self
                     .input
