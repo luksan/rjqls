@@ -50,6 +50,20 @@ impl<'f> ExprEval<'f> {
                 expr_val_from_value(Value::from(typ))
             }
 
+            ("_strindices", 1) => {
+                let input = self.input.as_str().context("input  must be a string")?;
+                let needle = args[0].accept(self)?.next().unwrap()?;
+                let needle = needle.as_str().context("needle must be a string")?;
+                let mut ret = vec![];
+                let mut pos = 0;
+
+                while let Some(i) = input[pos..].find(needle) {
+                    ret.push(Value::from(i + pos));
+                    pos += i + 1;
+                }
+                expr_val_from_value(Value::from(ret))
+            }
+
             (_, len) => bail!("Function {name}/{len} not found."),
         }
     }
