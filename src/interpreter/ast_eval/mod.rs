@@ -154,6 +154,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                     BinOps::Eq => Ok(Value::from(l == r)),
                     BinOps::NotEq => Ok(Value::from(l != r)),
                     BinOps::Less => Ok(l.less_than(r)),
+
+                    BinOps::And => Ok(Value::from(l.is_truthy() && r.is_truthy())),
+                    BinOps::Or => Ok(Value::from(l.is_truthy() || r.is_truthy())),
+
                     op => unimplemented!("{op:?}"),
                 };
                 ret.push(r);
