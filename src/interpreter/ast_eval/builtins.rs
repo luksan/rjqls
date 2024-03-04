@@ -6,19 +6,19 @@ impl<'f> ExprEval<'f> {
         'f: 'expr,
         'expr: 'f,
     {
-        Ok(match (name, args.len()) {
+        match (name, args.len()) {
             ("add", 0) => {
                 let mut sum: Value = ().into();
                 for v in self.input.iterate()? {
                     sum = sum.add(v)?;
                 }
-                expr_val_from_value(sum)?
+                expr_val_from_value(sum)
             }
-            ("empty", 0) => Default::default(),
-            ("length", 0) => expr_val_from_value(self.input.length()?)?,
+            ("empty", 0) => Ok(Default::default()),
+            ("length", 0) => expr_val_from_value(self.input.length()?),
 
             // Regex
-            ("match", 1) => self.match_1(args)?,
+            ("match", 1) => self.match_1(args),
             ("split", 1) => {
                 let input = self
                     .input
@@ -31,8 +31,13 @@ impl<'f> ExprEval<'f> {
                 // TODO: less copying of strings
                 expr_val_from_value(Value::from(
                     input.split(sep).map(|s| Value::from(s)).collect::<Vec<_>>(),
-                ))?
+                ))
             }
+            ("tostring", 0) => expr_val_from_value(match self.input {
+                // JSON encode input value
+                Value::String(_) => self.input.clone(),
+                _ => Value::from(format!("{}", self.input)),
+            }),
             ("type", 0) => {
                 let typ = match self.input {
                     Value::Array(_) => "array",
@@ -42,11 +47,11 @@ impl<'f> ExprEval<'f> {
                     Value::Object(_) => "object",
                     Value::String(_) => "string",
                 };
-                expr_val_from_value(Value::from(typ))?
+                expr_val_from_value(Value::from(typ))
             }
 
             (_, len) => bail!("Function {name}/{len} not found."),
-        })
+        }
     }
 }
 
