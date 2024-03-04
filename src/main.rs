@@ -131,9 +131,17 @@ fn read_value_from_stdin() -> Result<Option<Value>> {
     }
 }
 
-fn eval_input_and_print(input: Value, interpreter: &mut AstInterpreter) -> Result<()> {
+fn eval_input_and_print(
+    input: Value,
+    interpreter: &mut AstInterpreter,
+    raw_output: bool,
+) -> Result<()> {
     for val in interpreter.eval_input(input)? {
-        println!("{val}")
+        if raw_output && val.as_str().is_some() {
+            println!("{}", val.as_str().unwrap())
+        } else {
+            println!("{val}")
+        }
     }
 
     Ok(())
@@ -206,10 +214,10 @@ fn main() -> Result<()> {
             inputs.pop();
             Value::from(inputs)
         };
-        eval_input_and_print(input, &mut prog)?;
+        eval_input_and_print(input, &mut prog, copts.raw_output)?;
     } else {
         for inp in inputs {
-            eval_input_and_print(inp?, &mut prog)?;
+            eval_input_and_print(inp?, &mut prog, copts.raw_output)?;
         }
     }
     Ok(())
