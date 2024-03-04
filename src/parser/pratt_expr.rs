@@ -1,8 +1,8 @@
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
+use crate::parser::{PairExt, PRATT_PARSER, Rule};
 use crate::parser::expr_ast::{Ast, BinOps, Expr};
-use crate::parser::{PairExt, Rule, PRATT_PARSER};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -407,7 +407,7 @@ mod test_parser {
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
             [slice, ".[4:-6]"],
 
-            [binop_alt, "false // 1"]
+            [alternate_op, "false//1"]
             [binop_and, "true and false"]
             [try1, "try 1"],
             [try_catch, "try 1 catch 2"],
