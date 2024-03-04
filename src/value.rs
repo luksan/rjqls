@@ -371,6 +371,11 @@ impl ValueOps for ArcValue {
                 sum.extend(b.0.iter().map(|(k, v)| (k.clone(), v.clone())));
                 sum.into()
             }
+            (Self::String(a), Self::String(b)) => {
+                let mut a = a.0.as_str().to_owned();
+                a.push_str(b.0.as_str());
+                Self::from(a)
+            }
             (a, b) => bail!("Can't add {a:?} and {b:?}"),
         })
     }
