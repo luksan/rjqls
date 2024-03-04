@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
@@ -29,17 +30,17 @@ pub trait ValueOps: Sized {
     fn length(&self) -> Result<Self>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ArcValue {
-    Array(ArcArray),
+    Null,
     Bool(bool),
     Number(ArcNum),
-    Null,
-    Object(ArcObj),
     String(ArcStr),
+    Array(ArcArray),
+    Object(ArcObj),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, PartialOrd)]
 pub struct ArcArray(Arc<Vec<ArcValue>>);
 
 impl ArcArray {
@@ -77,6 +78,16 @@ impl From<JsonNumber> for ArcNum {
         Self(value)
     }
 }
+
+impl PartialOrd for ArcNum {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0
+            .as_f64()
+            .unwrap()
+            .partial_cmp(&other.0.as_f64().unwrap())
+    }
+}
+
 impl Debug for ArcNum {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let x = &self.0;
@@ -114,6 +125,34 @@ impl ArcObj {
 
     pub fn get_mut_obj(&mut self) -> Option<&mut ObjMap> {
         Arc::get_mut(&mut self.0)
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        let mut keys = self.0.keys().map(|s| s.as_str()).collect::<Vec<_>>();
+        keys.sort();
+        keys
+    }
+}
+
+impl PartialOrd for ArcObj {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let keys_a = self.keys();
+        let keys_b = other.keys();
+        let k = keys_a.partial_cmp(&keys_b);
+        if k != Some(Ordering::Equal) {
+            return k;
+        };
+        for key in keys_a {
+            let x = self
+                .0
+                .get(key)
+                .unwrap()
+                .partial_cmp(other.0.get(key).unwrap());
+            if x != Some(Ordering::Equal) {
+                return x;
+            }
+        }
+        Some(Ordering::Equal)
     }
 }
 

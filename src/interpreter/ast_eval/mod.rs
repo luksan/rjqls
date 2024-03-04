@@ -160,15 +160,22 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             let rhs = rhs.accept(self)?;
             for r in rhs {
                 let r = &r?;
+
+                macro_rules! cmp {
+                    ($op:tt) => {Ok(Value::from(l $op r))};
+                }
                 let r = match op {
                     BinOps::Add => l.add(r),
                     BinOps::Sub => l.sub(r),
                     BinOps::Mul => l.mul(r),
                     BinOps::Div => l.div(r),
 
-                    BinOps::Eq => Ok(Value::from(l == r)),
-                    BinOps::NotEq => Ok(Value::from(l != r)),
-                    BinOps::Less => Ok(l.less_than(r)),
+                    BinOps::Eq => cmp!(==),
+                    BinOps::NotEq => cmp!(!=),
+                    BinOps::Less => cmp!(<),
+                    BinOps::LessEq => cmp!(<=),
+                    BinOps::Greater => cmp!(>),
+                    BinOps::GreaterEq => cmp!(>=),
 
                     BinOps::And => Ok(Value::from(l.is_truthy() && r.is_truthy())),
                     BinOps::Or => Ok(Value::from(l.is_truthy() || r.is_truthy())),
