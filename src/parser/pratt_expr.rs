@@ -82,6 +82,34 @@ fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {
     ret
 }
 
+fn parse_inner_str(pair: Pair<Rule>) -> Expr {
+    let pairs = pair.into_inner();
+    let mut ret = String::with_capacity(pairs.len());
+
+    for p in pairs {
+        match p.as_rule() {
+            Rule::char => ret.push(p.as_str().chars().next().unwrap()),
+            Rule::escape => ret.push(match p.as_str().strip_prefix('\\').unwrap() {
+                "\"" => '"',
+                "\\" => '\\',
+                "/" => '/',
+                "b" => '\u{8}',
+                "f" => '\u{c}',
+                "n" => '\n',
+                "r" => '\r',
+                "t" => '\t',
+                codept => codept
+                    .strip_prefix("u")
+                    .and_then(|s| u32::from_str_radix(s, 16).ok())
+                    .and_then(char::from_u32)
+                    .unwrap_or(char::REPLACEMENT_CHARACTER),
+            }),
+            _ => unreachable!(),
+        }
+    }
+    Expr::Literal(ret.into())
+}
+
 fn parse_if_expr(pair: Pair<Rule>) -> Expr {
     let mut pairs = pair.into_inner();
     let cond = pratt_parser(pairs.next().unwrap().into_inner());
@@ -205,24 +233,21 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     Expr::Reduce(input, iter_var, init, update)
                 }
                 Rule::string => {
-                    let mut x = p.into_inner();
-                    match x.len() {
-                        0 => Expr::Literal("".into()),
-                        1 => {
-                            let s = x.next().unwrap();
-                            Expr::Literal(s.inner_string(0).into())
+                    let x = p.into_inner();
+                    let mut parts = Vec::with_capacity(x.len());
+                    for p in x {
+                        match p.as_rule() {
+                            Rule::inner_str => parts.push(parse_inner_str(p)),
+                            Rule::str_interp => parts.push(*parse_inner_expr(p)),
+                            _ => unreachable!(),
                         }
-                        len => {
-                            let mut parts = Vec::with_capacity(len);
-                            for p in x {
-                                match p.as_rule() {
-                                    Rule::inner_str => parts.push(Expr::Literal(p.as_str().into())),
-                                    Rule::str_interp => parts.push(*parse_inner_expr(p)),
-                                    _ => unreachable!(),
-                                }
-                            }
-                            Expr::StringInterp(parts)
-                        }
+                    }
+                    if parts.is_empty() {
+                        Expr::Literal("".into())
+                    } else if parts.len() == 1 && matches!(parts[0], Expr::Literal(_)) {
+                        parts.pop().unwrap()
+                    } else {
+                        Expr::StringInterp(parts)
                     }
                 }
                 Rule::try_catch => {
@@ -484,6 +509,8 @@ mod test_parser {
             [foreach, "foreach .[] as $i (0; .+$i; .*2)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), BinOp(Mul, Dot, Literal(Number(2))))"#]
             [foreach2, "foreach .[] as $i (0; .+$i)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), Dot)"#]
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
+
+            [string_escape, r#""-\n\t\u00c4-""#, "Literal(String(\"-\\n\\tÄ-\"))"]
         ];
     }
 

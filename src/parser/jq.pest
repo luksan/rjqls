@@ -1,9 +1,8 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "#" ~ (!NEWLINE ~ ANY)* }
 
-char = {
-    !("\"" | "\\") ~ ANY
-    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+char = { !("\"" | "\\") ~ ANY  }
+escape = { "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
@@ -31,7 +30,7 @@ plusminus = _{"+" | "-" }
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ( "." ~ ASCII_DIGIT*)? ~ ( ("e"|"E") ~ plusminus? ~ ASCII_DIGIT+)? }
 
 string = ${ "\"" ~ (inner_str | str_interp)* ~ "\"" }
-inner_str = @{ char+ }
+inner_str = ${ (char|escape)+ }
 str_interp = !{ "\\(" ~ pratt_expr ~ ")" }
 
 null = { "null" }
