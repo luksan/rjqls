@@ -508,6 +508,24 @@ mod test {
     }
 
     #[test]
+    fn test_func() {
+        let filter = r#"def a(s): . + s + .; .| a("3")"#;
+        let input = Value::from("2");
+        let val = eval_expr(filter, input).unwrap();
+        let out_ref = Value::from(2.0);
+        assert_eq!(val[0], out_ref)
+    }
+
+    #[test]
+    fn test_nested_func() {
+        let filter = r#"def a(s): def b: s + .; b + 1; . | a(2)"#;
+        let input = Value::from(0);
+        let val = eval_expr(filter, input).unwrap();
+        let out_ref = Value::from(3.0);
+        assert_eq!(val[0], out_ref)
+    }
+
+    #[test]
     fn test_include() {
         let filter = r#"include "tests/test_include.jq"; func_a"#;
         let ast = parse_program(filter).unwrap();

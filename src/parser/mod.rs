@@ -119,7 +119,7 @@ mod test {
     #[test]
     fn parse_tests() {
         let code = std::fs::read_to_string("tests/log-line-parser.jq").unwrap();
-        let res = JqGrammar::parse(Rule::program, &code);
+        let res = JqGrammar::parse(Rule::jq_module, &code);
         let Ok(_pairs) = res else {
             let err = res.unwrap_err();
             panic!("{err}");

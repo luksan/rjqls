@@ -288,13 +288,16 @@ mod test {
             r#""x\(1,2)y\(3,4)z" "#,
             ["\"x1y3z\"", "\"x2y3z\"", "\"x1y4z\"", "\"x2y4z\""]
         );
+
+        check_value!(subs, r#"sub("\\s+"; "")"#, "\"   asd asd  \"", ["asd asd"]);
     }
 
     #[test]
     fn test_eval() {
-        let prog = ".[] | select(.==3)";
-        let input = jval("[1,2,3]");
-        let mut i = AstInterpreter::new(prog).unwrap();
+        let prog = r#"sub("\\s+"; "")"#;
+        let input = jval("\"  asd asd   \"");
+        let mut i = dbg!(AstInterpreter::new(prog).unwrap());
+        // panic!();
         let v = i.eval_input(input).unwrap();
         assert_eq!(v[0], Value::from(3))
     }

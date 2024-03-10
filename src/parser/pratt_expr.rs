@@ -511,6 +511,8 @@ mod test_parser {
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
 
             [string_escape, r#""-\n\t\u00c4-""#, "Literal(String(\"-\\n\\tÄ-\"))"]
+
+            [nested_func, "def a(s): def b: . + s; b + 1; a(0)", r#"DefineFunc { name: "a", args: ["s"], body: DefineFunc { name: "b", args: [], body: BinOp(Add, Dot, Call("s", [])), rhs: BinOp(Add, Call("b", []), Literal(Number(1))) }, rhs: Call("a", [Literal(Number(0))]) }"#]
         ];
     }
 

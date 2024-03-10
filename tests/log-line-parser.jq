@@ -21,5 +21,3 @@ def log_level:
 def reformat:
  [(.| message) , " (", (.|log_level) , ")" ] | join("")
 ;
-
-. | reformat
