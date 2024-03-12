@@ -142,16 +142,18 @@ impl Display for Expr {
     }
 }
 
+pub type AstNode = Expr;
+
 #[allow(unused_variables)]
 pub trait ExprVisitor<'e, R> {
     fn default(&self) -> R;
 
-    fn visit_alternative(&self, lhs: &'e Expr, defaults: &'e Expr) -> R {
+    fn visit_alternative(&self, lhs: &'e AstNode, defaults: &'e AstNode) -> R {
         lhs.accept(self);
         defaults.accept(self);
         self.default()
     }
-    fn visit_array(&self, elements: &'e [Expr]) -> R {
+    fn visit_array(&self, elements: &'e [AstNode]) -> R {
         for e in elements {
             e.accept(self);
         }
@@ -169,13 +171,13 @@ pub trait ExprVisitor<'e, R> {
         rhs.accept(self);
         self.default()
     }
-    fn visit_call(&self, name: &str, args: &'e [Expr]) -> R {
+    fn visit_call(&self, name: &str, args: &'e [AstNode]) -> R {
         for a in args {
             a.accept(self);
         }
         self.default()
     }
-    fn visit_comma(&self, lhs: &'e Expr, rhs: &'e Expr) -> R {
+    fn visit_comma(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
@@ -184,8 +186,8 @@ pub trait ExprVisitor<'e, R> {
         &self,
         name: &'e str,
         args: &'e [String],
-        body: &'e Expr,
-        rhs: &'e Expr,
+        body: &'e AstNode,
+        rhs: &'e AstNode,
     ) -> R {
         rhs.accept(self);
         self.default()
@@ -196,13 +198,13 @@ pub trait ExprVisitor<'e, R> {
     fn visit_ident(&self, ident: &'e str) -> R {
         self.default()
     }
-    fn visit_if_else(&self, cond: &'e [Expr], branches: &'e [Expr]) -> R {
+    fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> R {
         for x in cond.iter().chain(branches.iter()) {
             x.accept(self);
         }
         self.default()
     }
-    fn visit_index(&self, expr: &'e Expr, idx: Option<&'e Expr>) -> R {
+    fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> R {
         expr.accept(self);
         idx.map(|idx| idx.accept(self));
         self.default()
@@ -217,41 +219,52 @@ pub trait ExprVisitor<'e, R> {
         }
         self.default()
     }
-    fn visit_pipe(&self, lhs: &'e Expr, rhs: &'e Expr) -> R {
+    fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
     }
-    fn visit_reduce(&self, input: &'e Expr, var: &'e str, init: &'e Expr, update: &'e Expr) -> R {
+    fn visit_reduce(
+        &self,
+        input: &'e AstNode,
+        var: &'e str,
+        init: &'e AstNode,
+        update: &'e AstNode,
+    ) -> R {
         input.accept(self);
         init.accept(self);
         update.accept(self);
         self.default()
     }
-    fn visit_scope(&self, inner: &'e Expr) -> R {
+    fn visit_scope(&self, inner: &'e AstNode) -> R {
         inner.accept(self);
         self.default()
     }
-    fn visit_slice(&self, expr: &'e Expr, start: Option<&'e Expr>, end: Option<&'e Expr>) -> R {
+    fn visit_slice(
+        &self,
+        expr: &'e AstNode,
+        start: Option<&'e AstNode>,
+        end: Option<&'e AstNode>,
+    ) -> R {
         expr.accept(self);
         start.map(|s| s.accept(self));
         end.map(|s| s.accept(self));
         self.default()
     }
-    fn visit_string_interp(&self, parts: &'e [Expr]) -> R {
+    fn visit_string_interp(&self, parts: &'e [AstNode]) -> R {
         for p in parts {
             p.accept(self);
         }
         self.default()
     }
-    fn visit_try_catch(&self, try_expr: &'e Expr, catch_expr: Option<&'e Expr>) -> R {
+    fn visit_try_catch(&self, try_expr: &'e AstNode, catch_expr: Option<&'e AstNode>) -> R {
         try_expr.accept(self);
         if let Some(catch_expr) = catch_expr {
             catch_expr.accept(self);
         }
         self.default()
     }
-    fn visit_update_assign(&self, path: &'e Expr, assign: &'e Expr) -> R {
+    fn visit_update_assign(&self, path: &'e AstNode, assign: &'e AstNode) -> R {
         path.accept(self);
         assign.accept(self);
         self.default()
@@ -271,13 +284,13 @@ impl ExprPrinter {
         }
     }
 
-    pub fn format(expr: &Expr) -> String {
+    pub fn format(expr: &AstNode) -> String {
         let this = Self::new();
         expr.accept(&this);
         this.r.take()
     }
 
-    pub fn print(expr: &Expr) {
+    pub fn print(expr: &AstNode) {
         println!("{}", Self::format(expr))
     }
 
@@ -296,12 +309,12 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         todo!()
     }
 
-    fn visit_alternative(&self, lhs: &'_ Expr, defaults: &'_ Expr) -> () {
+    fn visit_alternative(&self, lhs: &AstNode, defaults: &AstNode) -> () {
         lhs.accept(self);
         self.puts("//");
         defaults.accept(self);
     }
-    fn visit_array(&self, elements: &[Expr]) -> () {
+    fn visit_array(&self, elements: &[AstNode]) -> () {
         self.putc('[');
         let mut it = elements.iter();
         if let Some(first) = it.next() {
@@ -326,7 +339,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_call(&self, name: &str, args: &[Expr]) -> () {
+    fn visit_call(&self, name: &str, args: &[AstNode]) -> () {
         self.puts(name);
         if !args.is_empty() {
             self.putc('(');
@@ -340,13 +353,19 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         }
     }
 
-    fn visit_comma(&self, lhs: &Expr, rhs: &Expr) -> () {
+    fn visit_comma(&self, lhs: &AstNode, rhs: &AstNode) -> () {
         lhs.accept(self);
         self.putc(',');
         rhs.accept(self);
     }
 
-    fn visit_define_function(&self, name: &str, args: &[String], body: &Expr, rhs: &Expr) -> () {
+    fn visit_define_function(
+        &self,
+        name: &str,
+        args: &[String],
+        body: &AstNode,
+        rhs: &AstNode,
+    ) -> () {
         self.puts("def ");
         self.puts(name);
         if !args.is_empty() {
@@ -372,7 +391,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.puts(ident)
     }
 
-    fn visit_if_else(&self, cond: &[Expr], branches: &[Expr]) -> () {
+    fn visit_if_else(&self, cond: &[AstNode], branches: &[AstNode]) -> () {
         self.puts("if ");
         cond[0].accept(self);
         self.puts(" then ");
@@ -388,7 +407,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.puts(" end");
     }
 
-    fn visit_index(&self, expr: &Expr, idx: Option<&Expr>) -> () {
+    fn visit_index(&self, expr: &AstNode, idx: Option<&AstNode>) -> () {
         if self.r.borrow().as_bytes().last() != Some(&b']') || !matches!(expr, Expr::Dot) {
             // don't emit redundant dots
             expr.accept(self);
@@ -425,7 +444,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc('}');
     }
 
-    fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> () {
+    fn visit_pipe(&self, lhs: &AstNode, rhs: &AstNode) -> () {
         lhs.accept(self);
         if !matches!(lhs, Expr::Index(_, _)) || !ChainedIndexPipeRemover::check(rhs) {
             self.putc('|');
@@ -433,13 +452,18 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_scope(&self, inner: &Expr) -> () {
+    fn visit_scope(&self, inner: &AstNode) -> () {
         self.putc('(');
         inner.accept(self);
         self.putc(')');
     }
 
-    fn visit_slice(&self, expr: &Expr, start: Option<&'_ Expr>, end: Option<&'_ Expr>) -> () {
+    fn visit_slice(
+        &self,
+        expr: &AstNode,
+        start: Option<&'_ AstNode>,
+        end: Option<&'_ AstNode>,
+    ) -> () {
         expr.accept(self);
         self.putc('[');
         start.map(|s| s.accept(self));
@@ -448,7 +472,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc(']');
     }
 
-    fn visit_string_interp(&self, parts: &[Expr]) -> () {
+    fn visit_string_interp(&self, parts: &[AstNode]) -> () {
         self.putc('"');
         for part in parts {
             if let Expr::Literal(str_lit) = part {
@@ -464,7 +488,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc('"');
     }
 
-    fn visit_try_catch(&self, try_expr: &'_ Expr, catch_expr: Option<&'_ Expr>) -> () {
+    fn visit_try_catch(&self, try_expr: &'_ AstNode, catch_expr: Option<&'_ AstNode>) -> () {
         if matches!(try_expr, Expr::Index(_, _)) && catch_expr.is_none() {
             try_expr.accept(self);
             self.putc('?');
@@ -495,7 +519,7 @@ impl ChainedIndexPipeRemover {
         }
     }
 
-    fn check(expr: &Expr) -> bool {
+    fn check(expr: &AstNode) -> bool {
         let s = Self::new();
         expr.accept(&s);
         s.is_chained_idx.get()
@@ -511,11 +535,11 @@ impl ExprVisitor<'_, ()> for ChainedIndexPipeRemover {
         // dot found, we're done
     }
 
-    fn visit_index(&self, expr: &'_ Expr, _idx: Option<&'_ Expr>) {
+    fn visit_index(&self, expr: &AstNode, _idx: Option<&AstNode>) {
         expr.accept(self)
     }
 
-    fn visit_try_catch(&self, try_expr: &'_ Expr, catch_expr: Option<&'_ Expr>) {
+    fn visit_try_catch(&self, try_expr: &AstNode, catch_expr: Option<&AstNode>) {
         if catch_expr.is_some() {
             // not a postfix try
             self.default();

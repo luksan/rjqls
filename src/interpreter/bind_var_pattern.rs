@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use tracing::{instrument, trace};
 
 use crate::interpreter::ast_eval::VarScope;
-use crate::parser::expr_ast::{Expr, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{AstNode, ExprVisitor, ObjectEntry};
 use crate::value::ArcObj;
 use crate::value::Value;
 
@@ -20,7 +20,7 @@ type ValIter<'v> = Box<dyn Iterator<Item = &'v Value> + 'v>;
 
 impl<'v, 'r> BindVars<'v, 'r> {
     #[instrument(skip(scope))]
-    pub fn bind(values: &'v Value, pattern: &Expr, scope: &'r VarScope) -> Result<()> {
+    pub fn bind(values: &'v Value, pattern: &AstNode, scope: &'r VarScope) -> Result<()> {
         let this = Self {
             scope,
             val_iter: RefCell::new(Box::new(iter::once(values))),
@@ -64,7 +64,7 @@ impl ExprVisitor<'_, Result<()>> for BindVars<'_, '_> {
         bail!("Invalid variable binding pattern.");
     }
 
-    fn visit_array(&self, elements: &[Expr]) -> VisitorRet {
+    fn visit_array(&self, elements: &[AstNode]) -> VisitorRet {
         let prev_iter = self.expect_array()?;
         for e in elements {
             e.accept(self)?;

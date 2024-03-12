@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'f> ExprEval<'f> {
-    pub(super) fn get_builtin<'expr>(&self, name: &str, args: &'expr [Expr]) -> ExprResult<'expr>
+    pub(super) fn get_builtin<'expr>(&self, name: &str, args: &'expr [AstNode]) -> ExprResult<'expr>
     where
         'f: 'expr,
         'expr: 'f,

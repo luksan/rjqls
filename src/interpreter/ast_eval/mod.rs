@@ -10,7 +10,7 @@ use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{Ast, AstNode, BinOps, Expr, ExprVisitor, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
@@ -75,7 +75,7 @@ impl<'f> ExprEval<'f> {
         }
     }
 
-    fn get_function<'expr>(&self, name: &str, args: &'expr [Expr]) -> Option<BoundFunc<'expr>>
+    fn get_function<'expr>(&self, name: &str, args: &'expr [AstNode]) -> Option<BoundFunc<'expr>>
     where
         'f: 'expr,
     {
@@ -118,7 +118,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         panic!("Missing func impl in ExprVisitor for ExprEval.");
     }
 
-    fn visit_alternative(&self, lhs: &'e Expr, defaults: &'e Expr) -> ExprResult<'e> {
+    fn visit_alternative(&self, lhs: &'e AstNode, defaults: &'e AstNode) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let mut ret = vec![];
         for v in lhs {
@@ -133,7 +133,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         Ok(Generator::from_iter(ret.into_iter()))
     }
 
-    fn visit_array(&self, elements: &'e [Expr]) -> ExprResult<'e> {
+    fn visit_array(&self, elements: &'e [AstNode]) -> ExprResult<'e> {
         let mut ret = Generator::empty();
         for e in elements {
             let v = e.accept(self)?;
@@ -188,7 +188,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         Ok(Generator::from_iter(ret))
     }
 
-    fn visit_call(&self, name: &str, args: &'e [Expr]) -> ExprResult<'e> {
+    fn visit_call(&self, name: &str, args: &'e [AstNode]) -> ExprResult<'e> {
         if let Some(bound_func) = self.get_function(name, args) {
             let eval = ExprEval::new(
                 bound_func.func_scope,
@@ -201,7 +201,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         }
     }
 
-    fn visit_comma(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {
+    fn visit_comma(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let rhs = rhs.accept(self)?;
         Ok(lhs.chain(rhs))
@@ -211,8 +211,8 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         &self,
         name: &str,
         args: &'e [String],
-        body: &'e Expr,
-        rhs: &'e Expr,
+        body: &'e AstNode,
+        rhs: &'e AstNode,
     ) -> ExprResult<'e> {
         let mut scope = self.func_scope.borrow().new_inner();
         scope.push(name.to_owned(), args.into(), body);
@@ -229,13 +229,13 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(Value::from(ident))
     }
 
-    fn visit_if_else(&self, cond: &'e [Expr], branches: &'e [Expr]) -> ExprResult<'e> {
+    fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> ExprResult<'e> {
         let ret = Default::default();
         fn check_remaining<'g>(
             this: &ExprEval<'g>,
             mut ret: Generator<'g>,
-            cond: &'g [Expr],
-            branches: &'g [Expr],
+            cond: &'g [AstNode],
+            branches: &'g [AstNode],
         ) -> Result<Generator<'g>> {
             if cond.is_empty() {
                 ret = ret.chain(branches[0].accept(this)?);
@@ -256,7 +256,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     // array or object index
-    fn visit_index(&self, expr: &'e Expr, idx: Option<&'e Expr>) -> ExprResult<'e> {
+    fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> ExprResult<'e> {
         let e = expr
             .accept(self)
             .with_context(|| format!("Eval of expr for indexing failed {expr:?}"))?;
@@ -329,7 +329,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             .into())
     }
 
-    fn visit_pipe(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {
+    fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let mut ret = Generator::empty();
         let mut rhs_eval = self.clone();
@@ -343,10 +343,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_reduce(
         &self,
-        input: &'e Expr,
+        input: &'e AstNode,
         var: &'e str,
-        init: &'e Expr,
-        update: &'e Expr,
+        init: &'e AstNode,
+        update: &'e AstNode,
     ) -> ExprResult<'e> {
         let input = input.accept(self)?;
         let Some(init) = init.accept(self)?.next() else {
@@ -363,7 +363,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(acc)
     }
 
-    fn visit_scope(&self, inner: &'e Expr) -> ExprResult<'e> {
+    fn visit_scope(&self, inner: &'e AstNode) -> ExprResult<'e> {
         self.begin_scope();
         let r = inner.accept(self);
         self.end_scope();
@@ -372,9 +372,9 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_slice(
         &self,
-        expr: &'e Expr,
-        start: Option<&'e Expr>,
-        end: Option<&'e Expr>,
+        expr: &'e AstNode,
+        start: Option<&'e AstNode>,
+        end: Option<&'e AstNode>,
     ) -> ExprResult<'e> {
         let val = expr.accept(self)?;
         let mut ret = vec![];
@@ -401,7 +401,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         Ok(Generator::from_iter(ret.into_iter()))
     }
 
-    fn visit_string_interp(&self, parts: &'e [Expr]) -> ExprResult<'e> {
+    fn visit_string_interp(&self, parts: &'e [AstNode]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
             if let Expr::Literal(string_lit) = part {

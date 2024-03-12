@@ -8,7 +8,7 @@ pub use func_scope::FuncScope;
 
 use crate::parser;
 use crate::parser::{JqModule, OwnedFunc, parse_module};
-use crate::parser::expr_ast::{Ast, Expr};
+use crate::parser::expr_ast::{Ast, AstNode};
 use crate::value::{ArcValue, Value};
 
 pub mod ast_eval;
@@ -25,7 +25,7 @@ mod func_scope {
     use std::sync::Arc;
 
     use crate::interpreter::{Arity, FuncDefArgs, Function};
-    use crate::parser::expr_ast::Expr;
+    use crate::parser::expr_ast::AstNode;
 
     #[derive(Default)]
     pub struct FuncScope<'f> {
@@ -67,7 +67,7 @@ mod func_scope {
             self.parent.as_ref()
         }
 
-        pub fn push(&mut self, name: String, args: FuncDefArgs, filter: &'f Expr) {
+        pub fn push(&mut self, name: String, args: FuncDefArgs, filter: &'f AstNode) {
             let func = Function::from_expr(args, filter);
             self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
@@ -136,13 +136,13 @@ mod func_scope {
 #[derive(Debug)]
 pub struct Function<'e> {
     args: FuncDefArgs,
-    filter: &'e Expr,
+    filter: &'e AstNode,
 }
 pub type FuncDefArgs = SmallVec<[String; 5]>;
 pub type FuncRet = Result<Value>;
 
 impl<'e> Function<'e> {
-    pub fn from_expr(args: FuncDefArgs, filter: &'e Expr) -> Function<'e> {
+    pub fn from_expr(args: FuncDefArgs, filter: &'e AstNode) -> Function<'e> {
         Function { args, filter }
     }
 
@@ -150,7 +150,7 @@ impl<'e> Function<'e> {
         self.args.len()
     }
 
-    pub fn filter(&self) -> &'e Expr {
+    pub fn filter(&self) -> &'e AstNode {
         &self.filter
     }
 
@@ -158,7 +158,7 @@ impl<'e> Function<'e> {
         self: &Arc<Self>,
         name: String,
         func_scope: Arc<FuncScope<'scope>>,
-        arguments: &'scope [Expr],
+        arguments: &'scope [AstNode],
     ) -> Result<BoundFunc<'scope>>
     where
         'e: 'scope,
