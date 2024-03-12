@@ -511,7 +511,7 @@ mod test {
         let filter = r#"def a(s): . + s + .; .| a("3")"#;
         let input = Value::from("2");
         let val = eval_expr(filter, input).unwrap();
-        let out_ref = Value::from(2.0);
+        let out_ref = Value::from("232");
         assert_eq!(val[0], out_ref)
     }
 
