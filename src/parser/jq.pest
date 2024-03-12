@@ -40,16 +40,12 @@ literal = { number | bool | null } // string is parsed separately
 ident = ${ !(keywords ~ !( ASCII_ALPHANUMERIC | "_")) ~  (ASCII_ALPHA|"_") ~ ( ASCII_ALPHANUMERIC | "_" )* }
 keywords = { "and"|"as"|"break"|"catch"|"foreach"|"if"|"then"|"else"|"elif"|"end"|"label"|"or"|"reduce"|"try"|"import"|"include"|"module" }
 
-obj = {
-    "{" ~ "}" |
-    "{" ~ obj_pair ~ (comma ~ obj_pair)* ~ "}"
-}
+obj = { "{" ~ (obj_pair ~ ("," ~ obj_pair)*)? ~ "}" }
 
-obj_pair = { obj_key ~ colon ~ obj_val }
+obj_pair = { obj_key ~ ":" ~ obj_val }
 obj_key = { ident | string | variable | ("(" ~ pratt_expr ~ ")") }
 obj_val = { primary ~ postfix * | "(" ~ pratt_expr ~ ")" }
 arr = {"[" ~ pratt_expr? ~ "]"}
-colon = { ":" }
 
 variable = ${ "$" ~ ident }
 // the binding is only used to reject invalid bindings, not to actually capture
@@ -85,6 +81,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     index = { "[" ~ pratt_expr ~ "]" | ident | string }
     iterate = { "[" ~ "]" }
     slice = { "[" ~ (( pratt_expr ~ colon ~ pratt_expr? ) | ( colon ~ pratt_expr )) ~ "]" }
+    colon = { ":" }
     try_postfix = { "?"+ }
   primary = _{
     obj |

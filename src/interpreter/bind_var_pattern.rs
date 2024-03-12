@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use tracing::{instrument, trace};
 
 use crate::interpreter::ast_eval::VarScope;
-use crate::parser::expr_ast::{Expr, ExprVisitor};
+use crate::parser::expr_ast::{Expr, ExprVisitor, ObjectEntry};
 use crate::value::ArcObj;
 use crate::value::Value;
 
@@ -84,20 +84,16 @@ impl ExprVisitor<'_, Result<()>> for BindVars<'_, '_> {
         Ok(())
     }
 
-    fn visit_object(&self, members: &[Expr]) -> Result<()> {
+    fn visit_object(&self, entries: &[ObjectEntry]) -> Result<()> {
         let prev_obj = self.expect_object()?;
-        members.iter().try_for_each(|m| m.accept(self))?;
+        for e in entries {
+            e.key.accept(self)?;
+            let v = self.curr_obj_val.replace(&Value::Null);
+            let prev_iter = self.val_iter.replace(Box::new(iter::once(v)));
+            e.value.accept(self)?;
+            let _ = self.val_iter.replace(prev_iter);
+        }
         self.current_obj.replace(prev_obj);
-        Ok(())
-    }
-
-    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> Result<()> {
-        key.accept(self)?;
-        let v = self.curr_obj_val.replace(&Value::Null);
-        let prev_iter = self.val_iter.replace(Box::new(iter::once(v)));
-        value.accept(self)?;
-        let _ = self.val_iter.replace(prev_iter);
-
         Ok(())
     }
 

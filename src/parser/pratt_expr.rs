@@ -2,7 +2,7 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
 use crate::parser::{PairExt, PRATT_PARSER, Rule};
-use crate::parser::expr_ast::{Ast, BinOps, Expr};
+use crate::parser::expr_ast::{Ast, BinOps, Expr, ObjectEntry};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -40,35 +40,23 @@ fn parse_literal(pairs: Pair<Rule>) -> Value {
     literal.as_str().parse().unwrap()
 }
 
-fn parse_object(pair: Pair<Rule>) -> Vec<Expr> {
-    let pratt = get_pratt_parser();
+fn parse_object(pair: Pair<Rule>) -> Vec<ObjectEntry> {
     let pairs = pair.into_inner();
     if pairs.len() == 0 {
         return vec![];
     }
-    let commas = pratt
-        .map_primary(|p| match p.as_rule() {
-            Rule::obj_pair => {
-                let mut inner = p.into_inner();
-                let key = inner.next().unwrap();
-                let _colon = inner.next();
-                let value = inner.next().unwrap();
-                Ast::new(Expr::ObjectEntry {
-                    key: pratt_parser(key.into_inner()),
-                    value: pratt_parser(value.into_inner()),
-                })
-            }
-            p => panic!("{p:?}"),
+    let mut ret = Vec::with_capacity(pairs.len());
+    for entry in pairs {
+        assert_eq!(entry.as_rule(), Rule::obj_pair);
+        let mut inner = entry.into_inner();
+        let key = inner.next().unwrap();
+        let value = inner.next().unwrap();
+        ret.push(ObjectEntry {
+            key: *pratt_parser(key.into_inner()),
+            value: *pratt_parser(value.into_inner()),
         })
-        .map_infix(|lhs, op, rhs| {
-            let expr = match op.as_rule() {
-                Rule::comma => Expr::Comma(lhs, rhs),
-                p => panic!("Incorrect obj infix operator {p:?}"),
-            };
-            Ast::new(expr)
-        })
-        .parse(pairs);
-    vec_from_commas(commas)
+    }
+    ret
 }
 
 fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {

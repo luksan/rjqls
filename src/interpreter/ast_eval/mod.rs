@@ -10,7 +10,7 @@ use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor};
+use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprVisitor, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
@@ -287,12 +287,20 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(lit.clone())
     }
 
-    fn visit_object(&self, members: &'e [Expr]) -> ExprResult<'e> {
-        // TODO: change the type of members to something more specific
+    fn visit_object(&self, entries: &'e [ObjectEntry]) -> ExprResult<'e> {
+        let visit_obj_entry = |e: &'e ObjectEntry| -> ExprResult<'e> {
+            let (key, value) = (&e.key, &e.value);
+            let mut key_gen = key.accept(self)?;
+            let val = value.accept(self)?;
+            let key = key_gen.next().unwrap();
+            let mut ret = vec![key];
+            ret.extend(val);
+            Ok(ret.into())
+        };
+
         let mut objects: Vec<Map> = vec![Map::default()];
-        for member in members {
-            assert!(matches!(member, Expr::ObjectEntry { .. }));
-            let mut keyvals = member.accept(self)?;
+        for e in entries {
+            let mut keyvals = visit_obj_entry(e)?;
             let key = keyvals.next().unwrap()?;
             let key = key.as_str().context("Object key must be a string")?;
             let mut values = keyvals;
@@ -319,15 +327,6 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             .map(|m| Ok(Value::from(m)))
             .collect::<Vec<_>>()
             .into())
-    }
-
-    fn visit_obj_entry(&self, key: &'e Expr, value: &'e Expr) -> ExprResult<'e> {
-        let mut key_gen = key.accept(self)?;
-        let val = value.accept(self)?;
-        let key = key_gen.next().unwrap();
-        let mut ret = vec![key];
-        ret.extend(val);
-        Ok(ret.into())
     }
 
     fn visit_pipe(&self, lhs: &'e Expr, rhs: &'e Expr) -> ExprResult<'e> {

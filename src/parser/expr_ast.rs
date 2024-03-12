@@ -70,11 +70,7 @@ pub enum Expr {
     IfElse(Vec<Expr>, Vec<Expr>),
     Index(Ast, Option<Ast>), // [2]
     Literal(Value),
-    Object(Vec<Expr>),
-    ObjectEntry {
-        key: Ast,
-        value: Ast,
-    },
+    Object(Vec<ObjectEntry>),
     ObjMember(String), // select object member
     Pipe(Ast, Ast),
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
@@ -87,6 +83,13 @@ pub enum Expr {
     Label(String),
     Break(String),
 }
+
+#[derive(Debug, PartialEq)]
+pub struct ObjectEntry {
+    pub key: Expr,
+    pub value: Expr,
+}
+
 impl Expr {
     #[instrument(name = "A", level = "trace", skip_all)]
     #[allow(unused_variables)] // FIXME remove
@@ -115,7 +118,6 @@ impl Expr {
             Expr::Label(name) => unimplemented!(),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
-            Expr::ObjectEntry { key, value } => visitor.visit_obj_entry(key, value),
             Expr::ObjMember(k) => visitor.visit_obj_member(k),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
             Expr::Reduce(input, var, init, update) => {
@@ -210,15 +212,11 @@ pub trait ExprVisitor<'e, R> {
     fn visit_literal(&self, lit: &'e Value) -> R {
         self.default()
     }
-    fn visit_object(&self, members: &'e [Expr]) -> R {
-        for e in members {
-            e.accept(self);
+    fn visit_object(&self, entries: &'e [ObjectEntry]) -> R {
+        for e in entries {
+            e.key.accept(self);
+            e.value.accept(self);
         }
-        self.default()
-    }
-    fn visit_obj_entry(&self, key: &'e Expr, value: &'e Expr) -> R {
-        key.accept(self);
-        value.accept(self);
         self.default()
     }
     fn visit_obj_member(&self, key: &'e str) -> R {
@@ -416,23 +414,20 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.puts(&lit.to_string())
     }
 
-    fn visit_object(&self, members: &[Expr]) -> () {
+    fn visit_object(&self, entries: &[ObjectEntry]) -> () {
         self.putc('{');
-        let mut it = members.iter();
-        if let Some(first) = it.next() {
-            first.accept(self);
-            for e in it {
-                self.putc(',');
-                e.accept(self);
-            }
-        }
+        let mut it = entries.iter();
+        let put_entry = |e: &ObjectEntry| {
+            e.key.accept(self);
+            self.puts(": ");
+            e.value.accept(self);
+        };
+        it.next().map(put_entry);
+        it.for_each(|e| {
+            self.putc(',');
+            put_entry(e)
+        });
         self.putc('}');
-    }
-
-    fn visit_obj_entry(&self, key: &Expr, value: &Expr) -> () {
-        key.accept(self);
-        self.puts(": ");
-        value.accept(self);
     }
 
     fn visit_obj_member(&self, key: &str) -> () {
