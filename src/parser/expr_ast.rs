@@ -71,7 +71,6 @@ pub enum Expr {
     Index(Ast, Option<Ast>), // [2]
     Literal(Value),
     Object(Vec<ObjectEntry>),
-    ObjMember(String), // select object member
     Pipe(Ast, Ast),
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
@@ -118,7 +117,6 @@ impl Expr {
             Expr::Label(name) => unimplemented!(),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
-            Expr::ObjMember(k) => visitor.visit_obj_member(k),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
             Expr::Reduce(input, var, init, update) => {
                 visitor.visit_reduce(input, var, init, update)
@@ -217,9 +215,6 @@ pub trait ExprVisitor<'e, R> {
             e.key.accept(self);
             e.value.accept(self);
         }
-        self.default()
-    }
-    fn visit_obj_member(&self, key: &'e str) -> R {
         self.default()
     }
     fn visit_pipe(&self, lhs: &'e Expr, rhs: &'e Expr) -> R {
@@ -428,10 +423,6 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
             put_entry(e)
         });
         self.putc('}');
-    }
-
-    fn visit_obj_member(&self, key: &str) -> () {
-        self.puts(key)
     }
 
     fn visit_pipe(&self, lhs: &Expr, rhs: &Expr) -> () {
