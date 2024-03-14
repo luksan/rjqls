@@ -10,6 +10,7 @@ use pest::pratt_parser::PrattParser;
 use crate::parser::expr_ast::Ast;
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
 
+mod ast_jq_printer;
 pub mod expr_ast;
 pub mod pratt_expr;
 
