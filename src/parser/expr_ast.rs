@@ -48,14 +48,17 @@ impl Display for BinOps {
 
 pub type Ast = Box<Expr>;
 
+
+pub type ExprArray = Vec<Ast>;
+
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Alternative(Ast, Ast),
-    Array(Vec<Expr>),
+    Array(ExprArray),
     Assign(Ast, Ast),
     BindVars(Ast, Ast),
     BinOp(BinOps, Ast, Ast),
-    Call(String, Vec<Expr>),
+    Call(String, ExprArray),
     Comma(Ast, Ast),
     DefineFunc {
         name: String,
@@ -67,7 +70,7 @@ pub enum Expr {
     ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
     Ident(String),
     // the first vec is conditions, the second is true branches, with else as the last element
-    IfElse(Vec<Expr>, Vec<Expr>),
+    IfElse(ExprArray, ExprArray),
     Index(Ast, Option<Ast>), // [2]
     Literal(Value),
     Object(Vec<ObjectEntry>),
@@ -75,7 +78,7 @@ pub enum Expr {
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
     Slice(Ast, Option<Ast>, Option<Ast>),
-    StringInterp(Vec<Expr>),
+    StringInterp(ExprArray),
     TryCatch(Ast, Option<Ast>),
     UpdateAssign(Ast, Ast),
     Variable(String),
@@ -85,8 +88,8 @@ pub enum Expr {
 
 #[derive(Debug, PartialEq)]
 pub struct ObjectEntry {
-    pub key: Expr,
-    pub value: Expr,
+    pub key: Ast,
+    pub value: Ast,
 }
 
 impl Expr {
@@ -113,7 +116,7 @@ impl Expr {
             Expr::ForEach(expr, var, init, update, extract) => unimplemented!(),
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
-            Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_deref()),
+            Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
             Expr::Label(name) => unimplemented!(),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
@@ -123,11 +126,11 @@ impl Expr {
             }
             Expr::Scope(s) => visitor.visit_scope(s),
             Expr::Slice(expr, start, end) => {
-                visitor.visit_slice(expr, start.as_deref(), end.as_deref())
+                visitor.visit_slice(expr, start.as_ref(), end.as_ref())
             }
             Expr::StringInterp(parts) => visitor.visit_string_interp(parts.as_slice()),
             Expr::TryCatch(try_expr, catch_expr) => {
-                visitor.visit_try_catch(try_expr, catch_expr.as_deref())
+                visitor.visit_try_catch(try_expr, catch_expr.as_ref())
             }
             Expr::UpdateAssign(path, assign) => visitor.visit_update_assign(path, assign),
             Expr::Variable(s) => visitor.visit_variable(s),
@@ -142,7 +145,7 @@ impl Display for Expr {
     }
 }
 
-pub type AstNode = Expr;
+pub type AstNode = Box<Expr>;
 
 #[allow(unused_variables)]
 pub trait ExprVisitor<'e, R> {
@@ -284,7 +287,7 @@ impl ExprPrinter {
         }
     }
 
-    pub fn format(expr: &AstNode) -> String {
+    pub fn format(expr: &Expr) -> String {
         let this = Self::new();
         expr.accept(&this);
         this.r.take()
@@ -408,12 +411,12 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     }
 
     fn visit_index(&self, expr: &AstNode, idx: Option<&AstNode>) -> () {
-        if self.r.borrow().as_bytes().last() != Some(&b']') || !matches!(expr, Expr::Dot) {
+        if self.r.borrow().as_bytes().last() != Some(&b']') || !matches!(&**expr, Expr::Dot) {
             // don't emit redundant dots
             expr.accept(self);
         }
-        if let Some(Expr::Ident(ident)) = idx {
-            if !matches!(expr, Expr::Dot) {
+        if let Some(&Expr::Ident(ref ident)) = idx.map(|e| &**e) {
+            if !matches!(&**expr, Expr::Dot) {
                 self.putc('.');
             }
             self.puts(ident);
@@ -446,7 +449,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
 
     fn visit_pipe(&self, lhs: &AstNode, rhs: &AstNode) -> () {
         lhs.accept(self);
-        if !matches!(lhs, Expr::Index(_, _)) || !ChainedIndexPipeRemover::check(rhs) {
+        if !matches!(&**lhs, Expr::Index(_, _)) || !ChainedIndexPipeRemover::check(rhs) {
             self.putc('|');
         }
         rhs.accept(self);
@@ -475,7 +478,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     fn visit_string_interp(&self, parts: &[AstNode]) -> () {
         self.putc('"');
         for part in parts {
-            if let Expr::Literal(str_lit) = part {
+            if let Expr::Literal(str_lit) = &**part {
                 if let Some(s) = str_lit.as_str() {
                     self.puts(s);
                     continue;
@@ -489,7 +492,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
     }
 
     fn visit_try_catch(&self, try_expr: &'_ AstNode, catch_expr: Option<&'_ AstNode>) -> () {
-        if matches!(try_expr, Expr::Index(_, _)) && catch_expr.is_none() {
+        if matches!(&**try_expr, Expr::Index(_, _)) && catch_expr.is_none() {
             try_expr.accept(self);
             self.putc('?');
             return;

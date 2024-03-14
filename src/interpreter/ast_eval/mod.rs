@@ -404,7 +404,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn visit_string_interp(&self, parts: &'e [AstNode]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
-            if let Expr::Literal(string_lit) = part {
+            if let Expr::Literal(string_lit) = &**part {
                 if let Some(s) = string_lit.as_str() {
                     for r in ret.iter_mut() {
                         r.push_str(s);

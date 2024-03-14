@@ -2,7 +2,7 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
 use crate::parser::{PairExt, PRATT_PARSER, Rule};
-use crate::parser::expr_ast::{Ast, BinOps, Expr, ObjectEntry};
+use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprArray, ObjectEntry};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -52,20 +52,20 @@ fn parse_object(pair: Pair<Rule>) -> Vec<ObjectEntry> {
         let key = inner.next().unwrap();
         let value = inner.next().unwrap();
         ret.push(ObjectEntry {
-            key: *pratt_parser(key.into_inner()),
-            value: *pratt_parser(value.into_inner()),
+            key: pratt_parser(key.into_inner()),
+            value: pratt_parser(value.into_inner()),
         })
     }
     ret
 }
 
-fn vec_from_commas(mut ast: Ast) -> Vec<Expr> {
+fn vec_from_commas(mut ast: Ast) -> ExprArray {
     let mut ret = Vec::new();
     while let Expr::Comma(l, r) = *ast {
-        ret.push(*r);
+        ret.push(r);
         ast = l;
     }
-    ret.push(*ast);
+    ret.push(ast);
     ret.reverse();
     ret
 }
@@ -102,20 +102,20 @@ fn parse_if_expr(pair: Pair<Rule>) -> Expr {
     let mut pairs = pair.into_inner();
     let cond = pratt_parser(pairs.next().unwrap().into_inner());
     let if_true = pratt_parser(pairs.next().unwrap().into_inner());
-    let mut cond = vec![*cond];
-    let mut branch = vec![*if_true];
-    let mut else_ = Expr::Dot;
+    let mut cond = vec![cond];
+    let mut branch = vec![if_true];
+    let mut else_ = Expr::Dot.into();
     for p in pairs {
         match p.as_rule() {
             Rule::elif => {
                 let mut x = p.into_inner();
                 let c = pratt_parser(x.next().unwrap().into_inner());
                 let b = pratt_parser(x.next().unwrap().into_inner());
-                cond.push(*c);
-                branch.push(*b);
+                cond.push(c);
+                branch.push(b);
             }
             Rule::else_ => {
-                else_ = *pratt_parser(p.into_inner());
+                else_ = pratt_parser(p.into_inner());
                 break;
             }
             _ => unreachable!(),
@@ -187,7 +187,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     let mut params = Vec::new();
                     for param in x {
                         let param = parse_inner_expr(param);
-                        params.push(*param);
+                        params.push(param);
                     }
                     Expr::Call(ident, params)
                 }
@@ -225,15 +225,15 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     let mut parts = Vec::with_capacity(x.len());
                     for p in x {
                         match p.as_rule() {
-                            Rule::inner_str => parts.push(parse_inner_str(p)),
-                            Rule::str_interp => parts.push(*parse_inner_expr(p)),
+                            Rule::inner_str => parts.push(parse_inner_str(p).into()),
+                            Rule::str_interp => parts.push(parse_inner_expr(p)),
                             _ => unreachable!(),
                         }
                     }
                     if parts.is_empty() {
                         Expr::Literal("".into())
-                    } else if parts.len() == 1 && matches!(parts[0], Expr::Literal(_)) {
-                        parts.pop().unwrap()
+                    } else if parts.len() == 1 && matches!(&*parts[0], Expr::Literal(_)) {
+                        *parts.pop().unwrap()
                     } else {
                         Expr::StringInterp(parts)
                     }
