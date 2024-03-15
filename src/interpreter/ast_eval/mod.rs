@@ -10,7 +10,7 @@ use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::{Generator, ResVal};
-use crate::parser::expr_ast::{Ast, AstNode, BinOps, Expr, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{Ast, AstNode, BinOps, ExprVisitor, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
@@ -404,24 +404,20 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn visit_string_interp(&self, parts: &'e [AstNode]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
-            if let Expr::Literal(string_lit) = &**part {
-                if let Some(s) = string_lit.as_str() {
-                    for r in ret.iter_mut() {
-                        r.push_str(s);
-                    }
-                    continue;
-                }
-            }
             let mut values = part.accept(self)?;
             let Some(val) = values.next() else {
                 return Ok(Generator::empty());
             };
             let prefix = ret.clone();
-            let mut strings = &mut ret[0..];
+            let mut strings = ret.as_mut_slice();
             let mut val = val?;
             loop {
                 for s in strings {
-                    s.push_str(&val.to_string());
+                    if let Some(val) = val.as_str() {
+                        s.push_str(val);
+                    } else {
+                        s.push_str(&val.to_string());
+                    }
                 }
                 let Some(next) = values.next() else {
                     break;
@@ -442,25 +438,39 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 }
 
 #[cfg(test)]
-mod test {
+mod ast_eval_test {
     use std::str::FromStr;
 
-    use pest::Parser;
-
-    use crate::parser::{JqGrammar, parse_program, Rule};
-    use crate::parser::pratt_expr::pratt_parser;
+    use crate::parser::parse_program;
 
     use super::*;
 
-    #[test]
-    fn test_expr_eval() {
-        let array = Value::from_str("[1, 2, 3]").unwrap();
-        let filter = ". as [$a, $b] | $a + $b";
-        let result = eval_expr(filter, array).unwrap();
-        for _v in result {
-            // println!("{_v},")
-        }
+    macro_rules! ast_eval_tests {
+        ($([$test_name:ident, $filter:literal, $input:literal, $expect:literal]$(,)?)+) => {
+            $(
+            #[test]
+            fn $test_name() {
+                let input = Value::from_str($input).unwrap();
+                let ret = eval_expr($filter, input).unwrap();
+                assert_eq!(ret.len(), 1);
+                assert_eq!(ret[0], Value::from_str($expect).unwrap());
+            }
+
+            )+
+        };
     }
+
+    ast_eval_tests![
+        [expr_eval, ".", "1", "1"]
+        [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
+        [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3.0"]
+        [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]
+        [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
+        [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3.0"]
+        [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21.0"]
+        [slice_array, ".[1:3]", "[1,2,3,4,5,6]", "[2,3]"]
+        [split_1, r#"split(" ")"#, "\"a b c de \"", r#"["a","b","c","de",""]"#]
+    ];
 
     #[test]
     fn test_scope_fail() {
@@ -469,90 +479,12 @@ mod test {
         assert_eq!(&err.to_string(), "Variable 'a' is not defined.")
     }
 
-    #[test]
-    fn test_slice_array() {
-        let filter = r#".[1:3]"#;
-        let input = Value::from_str("[1,2,3,4,5,6]").unwrap();
-        let val = eval_expr(filter, input).unwrap();
-        assert_eq!(format!("{}", val[0]), r#"[2,3]"#)
-    }
-
-    #[test]
-    fn test_if_else() {
-        let filter = r#"if .[] then "hej" elif .[] == false then "hmm" else 4 end"#;
-        let input = Value::from_str("[1,false,3]").unwrap();
-        let val = eval_expr(filter, input).unwrap();
-        assert_eq!(
-            format!("{val:?}"),
-            r#"[String("hej"), Number(4), String("hmm"), Number(4), String("hej")]"#
-        )
-    }
-
-    #[test]
-    fn test_split_1() {
-        let filter = r#"split(" ")"#;
-        let input: Value = "a b c de ".into();
-        let val = eval_expr(filter, input).unwrap();
-        let out_ref = Value::from_str(r#"["a", "b", "c", "de", ""]"#).unwrap();
-        assert_eq!(val[0], out_ref)
-    }
-
-    #[test]
-    fn test_reduce() {
-        let filter = r#"reduce .[] as $a (0; $a + .)"#;
-        let input: Value = "[1,2,3,4,5,6]".parse().unwrap();
-        let val = eval_expr(filter, input).unwrap();
-        let out_ref = Value::from(21.0);
-        assert_eq!(val[0], out_ref)
-    }
-
-    #[test]
-    fn test_func() {
-        let filter = r#"def a(s): . + s + .; .| a("3")"#;
-        let input = Value::from("2");
-        let val = eval_expr(filter, input).unwrap();
-        let out_ref = Value::from("232");
-        assert_eq!(val[0], out_ref)
-    }
-
-    #[test]
-    fn test_nested_func() {
-        let filter = r#"def a(s): def b: s + .; b + 1; . | a(2)"#;
-        let input = Value::from(0);
-        let val = eval_expr(filter, input).unwrap();
-        let out_ref = Value::from(3.0);
-        assert_eq!(val[0], out_ref)
-    }
-
-    #[test]
-    fn test_include() {
-        let filter = r#"include "tests/test_include.jq"; func_a"#;
-        let ast = parse_program(filter).unwrap();
-        let scope = Arc::new(FuncScope::default());
-        let var_scope = VarScope::new();
-        let eval = ExprEval::new(scope, Value::Null, var_scope);
-        let rvals: Vec<_> = ast
-            .accept(&eval)
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap();
-        let x = &rvals[0];
-        assert_eq!(x, &Value::from(1));
-    }
-
     fn eval_expr(filter: &str, input: Value) -> Result<Vec<Value>> {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
-        let ast = parse_filter(filter).unwrap();
-        let rvals = ast.accept(&eval)?.collect();
-        rvals
-    }
-
-    fn parse_filter(filter: &str) -> Result<Ast> {
-        let mut pairs = JqGrammar::parse(Rule::pratt_prog, filter).context("Parse error")?;
-        let mut pairs = pairs.next().unwrap().into_inner();
-        let pairs = pairs.next().unwrap().into_inner();
-        Ok(pratt_parser(pairs))
+        let ast = parse_program(filter).unwrap();
+        let ret = ast.accept(&eval)?.collect();
+        ret // need to bind ret to variable, otherwise ast doesn't live long enough
     }
 }

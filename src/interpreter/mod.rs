@@ -285,8 +285,8 @@ mod test {
         check_value!(func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2.0"]);
         check_value!(
             str_interp,
-            r#""x\(1,2)y\(3,4)z" "#,
-            ["\"x1y3z\"", "\"x2y3z\"", "\"x1y4z\"", "\"x2y4z\""]
+            r#""x\(1,2)y\(3,4)z\("a"+"b")" "#,
+            ["\"x1y3zab\"", "\"x2y3zab\"", "\"x1y4zab\"", "\"x2y4zab\""]
         );
 
         // FIXME: causes stack overflow
