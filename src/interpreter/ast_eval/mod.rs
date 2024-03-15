@@ -404,28 +404,29 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn visit_string_interp(&self, parts: &'e [AstNode]) -> ExprResult<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
-            let mut values = part.accept(self)?;
-            let Some(val) = values.next() else {
+            let values = part.accept(self)?.collect::<Result<Vec<_>>>()?;
+            if values.is_empty() {
                 return Ok(Generator::empty());
             };
-            let prefix = ret.clone();
-            let mut strings = ret.as_mut_slice();
-            let mut val = val?;
-            loop {
-                for s in strings {
-                    if let Some(val) = val.as_str() {
-                        s.push_str(val);
-                    } else {
-                        s.push_str(&val.to_string());
-                    }
+            let val_cnt = values.len();
+            let prefix_len = ret.len();
+            for _ in 1..val_cnt {
+                // duplicate the prefix if the expression returned more than one value
+                ret.extend_from_within(..prefix_len);
+            }
+            let mut prefix_offset = 0;
+            for val in values {
+                let (val_string, val_str);
+                if let Some(val) = val.as_str() {
+                    val_str = val;
+                } else {
+                    val_string = val.to_string();
+                    val_str = val_string.as_str();
                 }
-                let Some(next) = values.next() else {
-                    break;
-                };
-                val = next?;
-                let end = ret.len();
-                ret.extend(prefix.iter().cloned());
-                strings = &mut ret[end..]
+                for s in &mut ret[prefix_offset..prefix_offset + prefix_len] {
+                    s.push_str(val_str);
+                }
+                prefix_offset += prefix_len;
             }
         }
         let ret = ret.into_iter().map(|s| Ok(s.into()));
@@ -470,6 +471,7 @@ mod ast_eval_test {
         [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21.0"]
         [slice_array, ".[1:3]", "[1,2,3,4,5,6]", "[2,3]"]
         [split_1, r#"split(" ")"#, "\"a b c de \"", r#"["a","b","c","de",""]"#]
+        [str_iterp_comma, r#"["a\(1,2)b\(3)"]"#, "null", "[\"a1b3\", \"a2b3\"]"]
     ];
 
     #[test]

@@ -67,7 +67,7 @@ impl<'f> ExprEval<'f> {
                 let input = self
                     .input
                     .as_str()
-                    .context("split input  must be a string")?;
+                    .context("split input must be a string")?;
                 let sep_str = args[0].accept(self)?.next().context("Empty separator")??;
                 let sep = sep_str
                     .as_str()
