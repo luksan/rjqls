@@ -1,4 +1,5 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::Deref;
 use std::str::FromStr;
 
 use anyhow::bail;
@@ -46,8 +47,54 @@ impl Display for BinOps {
     }
 }
 
-pub type Ast = Box<Expr>;
+pub type Ast = AstLoc;
 
+#[derive(PartialEq)]
+pub struct AstLoc {
+    pub expr: Box<Expr>,
+    pub line: u32,
+    pub col: u32,
+}
+
+impl AstLoc {
+    pub fn new(expr: Expr) -> Self {
+        Self {
+            expr: Box::new(expr),
+            line: 0,
+            col: 0,
+        }
+    }
+}
+
+impl From<Expr> for AstLoc {
+    fn from(value: Expr) -> Self {
+        Self {
+            expr: Box::new(value),
+            line: 0,
+            col: 0,
+        }
+    }
+}
+
+impl Deref for AstLoc {
+    type Target = Expr;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.expr
+    }
+}
+
+impl Display for AstLoc {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.expr)
+    }
+}
+
+impl Debug for AstLoc {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.expr)
+    }
+}
 
 pub type ExprArray = Vec<Ast>;
 
@@ -145,7 +192,7 @@ impl Display for Expr {
     }
 }
 
-pub type AstNode = Box<Expr>;
+pub type AstNode = AstLoc;
 
 #[allow(unused_variables)]
 pub trait ExprVisitor<'e, R> {

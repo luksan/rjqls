@@ -61,7 +61,7 @@ fn parse_object(pair: Pair<Rule>) -> Vec<ObjectEntry> {
 
 fn vec_from_commas(mut ast: Ast) -> ExprArray {
     let mut ret = Vec::new();
-    while let Expr::Comma(l, r) = *ast {
+    while let Expr::Comma(l, r) = *ast.expr {
         ret.push(r);
         ast = l;
     }
@@ -233,7 +233,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     if parts.is_empty() {
                         Expr::Literal("".into())
                     } else if parts.len() == 1 && matches!(&*parts[0], Expr::Literal(_)) {
-                        *parts.pop().unwrap()
+                        *parts.pop().unwrap().expr
                     } else {
                         Expr::StringInterp(parts)
                     }
