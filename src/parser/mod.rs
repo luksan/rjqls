@@ -16,7 +16,7 @@ pub mod pratt_expr;
 
 #[derive(pest_derive::Parser, Debug)]
 #[grammar = "parser/jq.pest"]
-pub struct JqGrammar;
+struct JqGrammar;
 
 static PRATT_PARSER: OnceLock<PrattParser<Rule>> = OnceLock::new();
 

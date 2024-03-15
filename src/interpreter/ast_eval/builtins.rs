@@ -117,10 +117,7 @@ impl<'f> ExprEval<'f> {
 mod test_builtins {
     use std::str::FromStr;
 
-    use pest::Parser;
-
-    use crate::parser::{JqGrammar, Rule};
-    use crate::parser::pratt_expr::pratt_parser;
+    use crate::parser::parse_program;
 
     use super::*;
 
@@ -139,15 +136,8 @@ mod test_builtins {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
-        let ast = parse_filter(filter).unwrap();
+        let ast = parse_program(filter).unwrap();
         let rvals = ast.accept(&eval)?.collect();
         rvals
-    }
-
-    fn parse_filter(filter: &str) -> Result<Ast> {
-        let mut pairs = JqGrammar::parse(Rule::pratt_prog, filter).context("Parse error")?;
-        let mut pairs = pairs.next().unwrap().into_inner();
-        let pairs = pairs.next().unwrap().into_inner();
-        Ok(pratt_parser(pairs))
     }
 }
