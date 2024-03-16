@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use anyhow::bail;
+use pest::Span;
 use tracing::{instrument, trace};
 
 use crate::parser::ast_jq_printer::ExprPrinter;
@@ -49,29 +50,31 @@ impl Display for BinOps {
 
 pub type Ast = AstLoc;
 
-#[derive(PartialEq)]
-pub struct AstLoc {
-    pub expr: Box<Expr>,
-    pub line: u32,
-    pub col: u32,
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Default)]
+pub struct SpanLoc {
+    start: usize,
+    len: usize,
 }
 
-impl AstLoc {
-    pub fn new(expr: Expr) -> Self {
+impl From<Span<'_>> for SpanLoc {
+    fn from(value: Span<'_>) -> Self {
         Self {
-            expr: Box::new(expr),
-            line: 0,
-            col: 0,
+            start: value.start(),
+            len: value.end() - value.start(),
         }
     }
 }
 
-impl From<Expr> for AstLoc {
-    fn from(value: Expr) -> Self {
+pub struct AstLoc {
+    pub expr: Box<Expr>,
+    pub span: SpanLoc,
+}
+
+impl AstLoc {
+    pub fn new(expr: Expr, span: Span<'_>) -> Self {
         Self {
-            expr: Box::new(value),
-            line: 0,
-            col: 0,
+            expr: Box::new(expr),
+            span: span.into(),
         }
     }
 }
@@ -93,6 +96,12 @@ impl Display for AstLoc {
 impl Debug for AstLoc {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.expr)
+    }
+}
+
+impl PartialEq for AstLoc {
+    fn eq(&self, other: &Self) -> bool {
+        self.expr == other.expr
     }
 }
 
