@@ -71,8 +71,9 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     comma = { "," }
     pipe = { "|" }
     as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
-  prefix = _{ func_def }
-  postfix = _{ idx_chain+ | try_postfix }
+  prefix = _{ func_def | dbg_brk_pre }
+    dbg_brk_pre = { "§" }
+  postfix = _{ idx_chain+ | try_postfix | dbg_brk_post }
     idx_chain = _{ "."? ~ idx_kinds ~ try_idx? }
     idx_kinds = _{ index | iterate | slice }
     try_idx = _{ idx_chain_pipe ~ idx_chain_dot ~ idx_kinds ~ try_postfix }
@@ -83,6 +84,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     slice = { "[" ~ (( pratt_expr ~ colon ~ pratt_expr? ) | ( colon ~ pratt_expr )) ~ "]" }
     colon = { ":" }
     try_postfix = { "?"+ }
+    dbg_brk_post = { "§" }
   primary = _{
     obj |
     if_cond |

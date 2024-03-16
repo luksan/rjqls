@@ -114,6 +114,7 @@ pub enum Expr {
     Assign(Ast, Ast),
     BindVars(Ast, Ast),
     BinOp(BinOps, Ast, Ast),
+    Breakpoint(Ast),
     Call(String, ExprArray),
     Comma(Ast, Ast),
     DefineFunc {
@@ -160,6 +161,7 @@ impl Expr {
             Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
             Expr::Break(name) => unimplemented!(),
+            Expr::Breakpoint(ast) => visitor.visit_breakpoint(ast),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
             Expr::DefineFunc {
@@ -228,6 +230,10 @@ pub trait ExprVisitor<'e, R> {
     fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> R {
         lhs.accept(self);
         rhs.accept(self);
+        self.default()
+    }
+    fn visit_breakpoint(&self, expr: &'e Ast) -> R {
+        expr.accept(self);
         self.default()
     }
     fn visit_call(&self, name: &str, args: &'e [AstNode]) -> R {

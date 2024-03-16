@@ -65,6 +65,12 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
+    fn visit_breakpoint(&self, expr: &'_ Ast) -> () {
+        self.puts("§(");
+        expr.accept(self);
+        self.putc(')');
+    }
+
     fn visit_call(&self, name: &str, args: &[AstNode]) -> () {
         self.puts(name);
         if !args.is_empty() {

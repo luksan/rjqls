@@ -33,6 +33,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::infix(Rule::idx_chain_pipe, Assoc::Right)) // virtual pipe in index chain
         .op(Op::postfix(Rule::index) | Op::postfix(Rule::iterate) | Op::postfix(Rule::slice))
         .op(Op::postfix(Rule::try_postfix))
+        .op(Op::prefix(Rule::dbg_brk_pre) | Op::postfix(Rule::dbg_brk_post))
 }
 
 fn parse_literal(pairs: Pair<Rule>) -> Value {
@@ -294,6 +295,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
         .map_prefix(|op, rhs| {
             let span = op.as_span();
             let ast = match op.as_rule() {
+                Rule::dbg_brk_pre => Expr::Breakpoint(rhs),
                 Rule::func_def => {
                     let (name, args, body) = parse_func_def(op);
                     Expr::DefineFunc {
@@ -310,6 +312,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
         .map_postfix(|expr, op| {
             let span = op.as_span();
             let ast = match op.as_rule() {
+                Rule::dbg_brk_post => Expr::Breakpoint(expr),
                 Rule::index => Expr::Index(expr, Some(parse_inner_expr(op))),
                 Rule::iterate => Expr::Index(expr, None),
                 Rule::slice => {
@@ -426,7 +429,6 @@ mod test_parser {
             [obj_a, "{a: 1}"]
 
             [idx_ident, ".a"]
-
             [chained_index_try, ".[1]?[2]?[3]"]
             [comma_idx_try, "1,2,.a[2]?", "1,2,.a.[2]?"]
             [idx_chained_ident, ".a.b.c"]
@@ -476,6 +478,9 @@ mod test_parser {
             [dot, ".", "Dot"]
             [empty_string, "\"\"", "Literal(String(\"\"))"]
             [array, "[1,2]", "Array([Literal(Number(1)), Literal(Number(2))])"]
+
+            [brk_pre, "1+§2*4", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Breakpoint(Literal(Number(2))), Literal(Number(4))))"]
+            [brk_post, "1+2*4?§", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Literal(Number(2)), Breakpoint(TryCatch(Literal(Number(4)), None))))"]
 
             [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
             [iter, ".[]", "Index(Dot, None)"]

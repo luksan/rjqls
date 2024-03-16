@@ -188,6 +188,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         Ok(Generator::from_iter(ret))
     }
 
+    fn visit_breakpoint(&self, expr: &'e Ast) -> ExprResult<'e> {
+        expr.accept(self)
+    }
+
     fn visit_call(&self, name: &str, args: &'e [AstNode]) -> ExprResult<'e> {
         if let Some(bound_func) = self.get_function(name, args) {
             let eval = ExprEval::new(
@@ -462,6 +466,7 @@ mod ast_eval_test {
     }
 
     ast_eval_tests![
+        [breakpoint, "§. | .", "1", "1"]
         [expr_eval, ".", "1", "1"]
         [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
         [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3.0"]
