@@ -41,9 +41,12 @@ mod func_scope {
     }
     impl Debug for FuncScope<'_> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            if self.parent.is_none() {
+                return writeln!(f, "-- root scope --");
+            }
             writeln!(f, "== FuncScope ==")?;
             for (key, func) in self.funcs.iter() {
-                writeln!(f, "{}/{}", key.0, func.arity())?;
+                writeln!(f, "{}/{} => {}", key.0, func.arity(), func.filter)?;
             }
             if let Some(p) = self.parent.as_ref() {
                 write!(f, "{p:?}")?;

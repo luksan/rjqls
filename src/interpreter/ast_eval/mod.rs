@@ -189,6 +189,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> ExprResult<'e> {
+        println!("{:?}", self.func_scope.borrow().as_ref());
         expr.accept(self)
     }
 
