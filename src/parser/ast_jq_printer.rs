@@ -184,6 +184,18 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
+    fn visit_reduce(&self, input: &AstNode, var: &str, init: &AstNode, update: &AstNode) -> () {
+        self.puts("reduce ");
+        input.accept(self);
+        self.puts(" as $");
+        self.puts(var);
+        self.putc('(');
+        init.accept(self);
+        self.putc(';');
+        update.accept(self);
+        self.putc(')');
+    }
+
     fn visit_scope(&self, inner: &AstNode) -> () {
         self.putc('(');
         inner.accept(self);
@@ -232,6 +244,12 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
             self.puts(" catch ");
             catch_expr.accept(self);
         }
+    }
+
+    fn visit_update_assign(&self, path: &'_ AstNode, assign: &'_ AstNode) -> () {
+        path.accept(self);
+        self.puts(" |= ");
+        assign.accept(self);
     }
 
     fn visit_variable(&self, name: &str) -> () {
