@@ -27,6 +27,7 @@ impl<'f> ExprEval<'f> {
                         .collect::<Vec<_>>(),
                 ))
             }
+            ("floor", 0) => math::floor(&self.input),
             ("implode", 0) => {
                 let input = self
                     .input

@@ -286,7 +286,7 @@ mod test {
         .unwrap();
 
         let x = intr.eval_input(Value::from(1)).unwrap();
-        assert_eq!(x[0], Value::from_str("[4.0, 5.0, 6.0]").unwrap())
+        assert_eq!(x[0], Value::from_str("[4, 5, 6]").unwrap())
     }
 
     mod test_eval {
@@ -309,7 +309,7 @@ mod test {
         }
         check_value!(
             [func_prefix, ". | def x: 3; . | x", "null", ["3"]]
-            [func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2.0"]]
+            [func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2"]]
             [str_interp,r#""x\(1,2)y\(3,4)z\("a"+"b")" "#, ["\"x1y3zab\"", "\"x2y3zab\"", "\"x1y4zab\"", "\"x2y4zab\""]]
             [subs,r#"sub("\\s+"; "")"#, "\"   asd asd \"", ["\"asd asd \""]]
         );

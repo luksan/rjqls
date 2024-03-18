@@ -14,6 +14,7 @@ use crate::parser::expr_ast::{Ast, AstNode, BinOps, ExprVisitor, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
+mod math;
 mod regex;
 
 #[derive(Debug)]
@@ -471,13 +472,13 @@ mod ast_eval_test {
         [expr_eval, ".", "1", "1"]
         [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
         [func_redef, r#"def a: 1; def b: a; def a: "function scope error"; b"#, "0", "1"]
-        [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3.0"]
+        [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3"]
         [func_complex_scope, r#"def a:"first "; def b(x):a + x; def a: "second"; b(a)"#, "0", "\"first second\""]
         [func_var_arg_name, r#"[ def a(a; $a): a, $a, def a: "inner"; a, $a; a("arg"; "var") ] "#,"null", r#"["var", "var", "inner", "var"]"#]
         [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]
         [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
-        [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3.0"]
-        [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21.0"]
+        [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3"]
+        [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21"]
         [slice_array, ".[1:3]", "[1,2,3,4,5,6]", "[2,3]"]
         [split_1, r#"split(" ")"#, "\"a b c de \"", r#"["a","b","c","de",""]"#]
         [str_iterp_comma, r#"["a\(1,2)b\(3)"]"#, "null", "[\"a1b3\", \"a2b3\"]"]

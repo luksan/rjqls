@@ -73,9 +73,9 @@ impl Display for ArcArray {
 
 #[derive(Clone, PartialEq)]
 pub struct ArcNum(JsonNumber);
-impl From<JsonNumber> for ArcNum {
-    fn from(value: JsonNumber) -> Self {
-        Self(value)
+impl<T: Into<JsonNumber>> From<T> for ArcNum {
+    fn from(value: T) -> Self {
+        Self(value.into())
     }
 }
 
@@ -85,9 +85,7 @@ impl ArcNum {
     }
 
     pub fn as_u64(&self) -> Option<u64> {
-        self.0
-            .as_u64() // FIXME: avoid converting int math to f64
-            .or_else(|| self.0.as_f64().map(|f| f as u64))
+        self.0.as_u64()
     }
 }
 
@@ -415,7 +413,11 @@ impl ValueOps for ArcValue {
             }
 
             (Self::Number(a), Self::Number(b)) => {
-                (a.0.as_f64().unwrap() + b.0.as_f64().unwrap()).into()
+                if let (Some(a), Some(b)) = (a.as_u64(), b.as_u64()) {
+                    Self::Number((a + b).into())
+                } else {
+                    (a.0.as_f64().unwrap() + b.0.as_f64().unwrap()).into()
+                }
             }
             (Self::Object(a), Self::Object(b)) => {
                 let mut sum = a.new_from();
@@ -434,7 +436,11 @@ impl ValueOps for ArcValue {
     fn sub(&self, other: &Self) -> Result<Self> {
         Ok(match (self, other) {
             (Self::Number(a), Self::Number(b)) => {
-                (a.0.as_f64().unwrap() - b.0.as_f64().unwrap()).into()
+                if let (Some(a), Some(b)) = (a.as_u64(), b.as_u64()) {
+                    Self::Number((a - b).into())
+                } else {
+                    (a.0.as_f64().unwrap() - b.0.as_f64().unwrap()).into()
+                }
             }
             (a, b) => bail!("Can't subtract {b:?} from {a:?}"),
         })
