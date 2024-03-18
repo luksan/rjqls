@@ -291,40 +291,25 @@ mod test {
         use super::*;
 
         macro_rules! check_value {
-            ($test_name:ident, $prog:literal, $input:literal, [$($expect:literal),+]) => {
+            ($([$test_name:ident, $prog:literal, $($input:literal,)? [$($expect:literal),+]])+) => {
+              $(
               #[test]
               fn $test_name() {
                   let mut i = AstInterpreter::new($prog).unwrap();
-                  let input = Value::from_str($input).unwrap();
-                  let output = i.eval_input(input).unwrap();
-                  let expect: Vec<_> = [$($expect)+].into_iter().map(jval).collect();
-                  assert_eq!(&output, &expect);
-              }
-            };
-            ($test_name:ident, $prog:literal, [$($expect:literal),+]) => {
-              #[test]
-              fn $test_name() {
-                  let mut i = AstInterpreter::new($prog).unwrap();
-                  let input = ().into();
+                  let input = if false {unreachable!()}
+                      $(else if true { Value::from_str($input).unwrap() })?
+                        else { Value::Null };
                   let output = i.eval_input(input).unwrap();
                   let expect: Vec<_> = [$($expect),+].into_iter().map(jval).collect();
                   assert_eq!(&output, &expect);
-              }
+              })+
             };
         }
-        check_value!(func_prefix, ". | def x: 3; . | x", "null", ["3"]);
-        check_value!(func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2.0"]);
         check_value!(
-            str_interp,
-            r#""x\(1,2)y\(3,4)z\("a"+"b")" "#,
-            ["\"x1y3zab\"", "\"x2y3zab\"", "\"x1y4zab\"", "\"x2y4zab\""]
-        );
-
-        check_value!(
-            subs,
-            r#"sub("\\s+"; "")"#,
-            "\"   asd asd \"",
-            ["\"asd asd \""]
+            [func_prefix, ". | def x: 3; . | x", "null", ["3"]]
+            [func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2.0"]]
+            [str_interp,r#""x\(1,2)y\(3,4)z\("a"+"b")" "#, ["\"x1y3zab\"", "\"x2y3zab\"", "\"x1y4zab\"", "\"x2y4zab\""]]
+            [subs,r#"sub("\\s+"; "")"#, "\"   asd asd \"", ["\"asd asd \""]]
         );
     }
 
