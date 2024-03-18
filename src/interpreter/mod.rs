@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::{bail, Result};
 use smallvec::SmallVec;
@@ -70,8 +70,14 @@ mod func_scope {
             self.parent.as_ref()
         }
 
-        pub fn push(&mut self, name: String, args: FuncDefArgs, filter: &'f AstNode) {
-            let func = Function::from_expr(args, filter);
+        pub fn push(
+            &mut self,
+            name: String,
+            args: FuncDefArgs,
+            filter: &'f AstNode,
+            def_scope: Option<&Arc<Self>>,
+        ) {
+            let func = Function::from_expr(args, filter, def_scope);
             self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
         }
@@ -81,10 +87,23 @@ mod func_scope {
                 .insert(FuncMapKey(name, func.arity()), func.clone());
         }
 
-        pub fn get_func(&self, name: &str, arity: Arity) -> Option<&Arc<Function<'f>>> {
+        pub fn get_func<'a>(
+            self: &'a Arc<Self>,
+            name: &str,
+            arity: Arity,
+        ) -> Option<(&'a Arc<Function<'f>>, Arc<Self>)> {
             self.funcs
                 .get(&(name, arity) as &dyn MapKeyT)
-                .or_else(|| self.parent.as_ref().and_then(|p| p.get_func(name, arity)))
+                .map(|func| {
+                    (
+                        func,
+                        func.def_scope
+                            .as_ref()
+                            .map(|weak| weak.upgrade().unwrap())
+                            .unwrap_or_else(|| self.clone()),
+                    )
+                })
+                .or_else(move || self.parent.as_ref().and_then(|p| p.get_func(name, arity)))
         }
     }
 
@@ -140,13 +159,23 @@ mod func_scope {
 pub struct Function<'e> {
     args: FuncDefArgs,
     filter: &'e AstNode,
+    def_scope: Option<Weak<FuncScope<'e>>>,
 }
+
 pub type FuncDefArgs = SmallVec<[String; 5]>;
 pub type FuncRet = Result<Value>;
 
 impl<'e> Function<'e> {
-    pub fn from_expr(args: FuncDefArgs, filter: &'e AstNode) -> Function<'e> {
-        Function { args, filter }
+    pub fn from_expr(
+        args: FuncDefArgs,
+        filter: &'e AstNode,
+        scope: Option<&Arc<FuncScope<'e>>>,
+    ) -> Function<'e> {
+        Function {
+            args,
+            filter,
+            def_scope: scope.map(|scope| Arc::downgrade(scope)),
+        }
     }
 
     pub fn arity(&self) -> Arity {
@@ -159,9 +188,9 @@ impl<'e> Function<'e> {
 
     pub fn bind<'scope>(
         self: &Arc<Self>,
-        name: String,
-        func_scope: Arc<FuncScope<'scope>>,
+        func_scope: &Arc<FuncScope<'scope>>,
         arguments: &'scope [AstNode],
+        arg_scope: &Arc<FuncScope<'scope>>,
     ) -> Result<BoundFunc<'scope>>
     where
         'e: 'scope,
@@ -171,9 +200,8 @@ impl<'e> Function<'e> {
         }
         let mut func_scope = func_scope.new_inner();
         for (name, arg) in self.args.iter().zip(arguments.iter()) {
-            func_scope.push(name.clone(), Default::default(), arg);
+            func_scope.push(name.clone(), Default::default(), arg, Some(arg_scope));
         }
-        func_scope.push_arc(name, self.clone()); // push ourselves to enable recursion
         Ok(BoundFunc {
             function: self.clone(),
             func_scope: Arc::new(func_scope),
@@ -214,7 +242,7 @@ impl AstInterpreter {
         let var_scope = self.variables.clone();
         let mut func_scope = FuncScope::default();
         for f in self.builtins.iter() {
-            func_scope.push(f.name.clone(), f.args.clone().into(), &f.filter);
+            func_scope.push(f.name.clone(), f.args.clone().into(), &f.filter, None);
         }
         let func_scope = Arc::new(func_scope);
         let eval = ExprEval::new(func_scope.clone(), input.clone(), var_scope);
@@ -292,13 +320,16 @@ mod test {
             ["\"x1y3zab\"", "\"x2y3zab\"", "\"x1y4zab\"", "\"x2y4zab\""]
         );
 
-        // FIXME: causes stack overflow
-        // check_value!(subs, r#"sub("\\s+"; "")"#, "\"   asd asd  \"", ["asd asd"]);
+        check_value!(
+            subs,
+            r#"sub("\\s+"; "")"#,
+            "\"   asd asd \"",
+            ["\"asd asd \""]
+        );
     }
 
     #[test]
     fn test_eval_dbg() {
-        panic!("Eval will cause stack overflow.");
         /*
         let prog = r#"sub("\\s+"; "")"#;
         let input = jval("\"  asd asd   \"");

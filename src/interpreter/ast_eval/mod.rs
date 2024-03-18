@@ -80,8 +80,8 @@ impl<'f> ExprEval<'f> {
         'f: 'expr,
     {
         let scope = self.func_scope.borrow();
-        let func = scope.get_func(name, args.len())?;
-        let ret = func.bind(name.to_owned(), scope.clone(), args).unwrap();
+        let (func, func_scope) = scope.get_func(name, args.len())?;
+        let ret = func.bind(&func_scope, args, &*scope).unwrap();
         Some(ret)
     }
 
@@ -190,6 +190,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> ExprResult<'e> {
         println!("{:?}", self.func_scope.borrow().as_ref());
+        println!("{:?}", self.variables);
         expr.accept(self)
     }
 
@@ -220,7 +221,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         rhs: &'e AstNode,
     ) -> ExprResult<'e> {
         let mut scope = self.func_scope.borrow().new_inner();
-        scope.push(name.to_owned(), args.into(), body);
+        scope.push(name.to_owned(), args.into(), body, None);
         self.enter_func_scope(Arc::new(scope));
         rhs.accept(self)
     }
@@ -470,7 +471,10 @@ mod ast_eval_test {
         [breakpoint, "§. | .", "1", "1"]
         [expr_eval, ".", "1", "1"]
         [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
+        [func_redef, r#"def a: 1; def b: a; def a: "function scope error"; b"#, "0", "1"]
         [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3.0"]
+        [func_complex_scope, r#"def a:"first "; def b(x):a + x; def a: "second"; b(a)"#, "0", "\"first second\""]
+        [func_var_arg_name, r#"[ def a(a; $a): a, $a, def a: "inner"; a, $a; a("arg"; "var") ] "#,"null", r#"["var", "var", "inner", "var"]"#]
         [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]
         [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
         [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3.0"]
