@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use smallvec::SmallVec;
 
 use ast_eval::{ExprEval, VarScope};
@@ -191,21 +191,23 @@ impl<'e> Function<'e> {
         func_scope: &Arc<FuncScope<'scope>>,
         arguments: &'scope [AstNode],
         arg_scope: &Arc<FuncScope<'scope>>,
-    ) -> Result<BoundFunc<'scope>>
+    ) -> BoundFunc<'scope>
     where
         'e: 'scope,
     {
-        if self.arity() != arguments.len() {
-            bail!("Function called with incorrect number of arguments")
-        }
+        assert_eq!(
+            self.arity(),
+            arguments.len(),
+            "bind() called with incorrect number of arguments"
+        );
         let mut func_scope = func_scope.new_inner();
         for (name, arg) in self.args.iter().zip(arguments.iter()) {
             func_scope.push(name.clone(), Default::default(), arg, Some(arg_scope));
         }
-        Ok(BoundFunc {
+        BoundFunc {
             function: self.clone(),
             func_scope: Arc::new(func_scope),
-        })
+        }
     }
 }
 

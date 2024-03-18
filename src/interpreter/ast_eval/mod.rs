@@ -81,8 +81,7 @@ impl<'f> ExprEval<'f> {
     {
         let scope = self.func_scope.borrow();
         let (func, func_scope) = scope.get_func(name, args.len())?;
-        let ret = func.bind(&func_scope, args, &*scope).unwrap();
-        Some(ret)
+        Some(func.bind(&func_scope, args, &*scope))
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
