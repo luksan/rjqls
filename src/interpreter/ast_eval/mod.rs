@@ -1,15 +1,14 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
-use crate::interpreter::generator::{Generator, ResVal};
+use crate::interpreter::generator::Generator;
 use crate::parser::expr_ast::{Ast, AstNode, BinOps, ExprVisitor, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
@@ -18,61 +17,64 @@ mod math;
 mod regex;
 
 #[derive(Debug)]
-pub struct VarScope {
-    entries: RwLock<HashMap<String, Value>>,
+pub struct VarScope<'e> {
+    name: Option<&'e str>,
+    value: Value,
     parent: Option<Arc<Self>>,
 }
 
-impl VarScope {
+impl<'e> VarScope<'e> {
     pub(crate) fn new() -> Arc<Self> {
         Self {
-            entries: Default::default(),
+            name: None,
+            value: Value::Null,
             parent: None,
         }
         .into()
     }
 
-    fn begin_scope(self: &Arc<Self>) -> Arc<Self> {
-        Self {
-            entries: Default::default(),
+    fn get_parent(&self) -> Option<&Self> {
+        self.parent.as_deref()
+    }
+
+    fn get_variable(&self, name: &str) -> Option<Value> {
+        if self.name == Some(name) {
+            Some(self.value.clone())
+        } else {
+            self.parent.as_ref().and_then(|p| p.get_variable(name))
+        }
+    }
+
+    pub(crate) fn set_variable<'new>(
+        self: &Arc<Self>,
+        name: &'new str,
+        value: Value,
+    ) -> Arc<VarScope<'new>>
+    where
+        'e: 'new,
+    {
+        VarScope {
+            name: Some(name),
+            value,
             parent: Some(self.clone()),
         }
         .into()
-    }
-
-    fn get_parent(&self) -> Option<&Arc<Self>> {
-        self.parent.as_ref()
-    }
-
-    fn get_variable(&self, name: &str) -> ResVal {
-        let entries = self.entries.read().unwrap();
-        if let Some(val) = entries.get(name) {
-            return Ok(val.clone());
-        }
-        match self.get_parent() {
-            None => bail!("Variable '{name}' is not defined."),
-            Some(p) => p.get_variable(name),
-        }
-    }
-    pub(crate) fn set_variable(&self, name: &str, value: Value) {
-        let mut entries = self.entries.write().unwrap();
-        entries.insert(name.to_owned(), value);
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ExprEval<'f> {
     input: Value,
-    variables: RefCell<Arc<VarScope>>,
     func_scope: RefCell<Arc<FuncScope<'f>>>,
+    var_scope_stack: RefCell<Vec<Arc<VarScope<'f>>>>,
 }
 
 impl<'f> ExprEval<'f> {
-    pub fn new(func_scope: Arc<FuncScope<'f>>, input: Value, var_scope: Arc<VarScope>) -> Self {
+    pub fn new(func_scope: Arc<FuncScope<'f>>, input: Value, var_scope: Arc<VarScope<'f>>) -> Self {
         Self {
             input,
-            variables: var_scope.into(),
             func_scope: func_scope.into(),
+            var_scope_stack: vec![var_scope].into(),
         }
     }
 
@@ -86,20 +88,38 @@ impl<'f> ExprEval<'f> {
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
-        Ok(self.variables.borrow().get_variable(name)?.into())
+        Ok(self
+            .var_scope_stack
+            .borrow()
+            .last()
+            .unwrap()
+            .get_variable(name)
+            .with_context(|| format!("Variable '{name}' is not defined."))
+            .into())
+    }
+
+    fn set_variable(&self, name: &'f str, value: Value) {
+        let mut scope = self.var_scope_stack.borrow_mut();
+        let scope = scope.last_mut().unwrap();
+        *scope = scope.set_variable(name, value);
+    }
+
+    fn set_var_scope(&self, scope: Arc<VarScope<'f>>) {
+        let mut slot = self.var_scope_stack.borrow_mut();
+        *slot.last_mut().unwrap() = scope;
     }
 
     fn begin_scope(&self) {
-        let mut vars = self.variables.borrow_mut();
-        let inner = vars.begin_scope();
-        *vars = inner;
+        let mut vars = self.var_scope_stack.borrow_mut();
+        let curr = vars.last().unwrap().clone();
+        vars.push(curr);
     }
 
     fn end_scope(&self) {
-        let mut vars = self.variables.borrow_mut();
-        let outer = vars.get_parent().unwrap().clone();
-        *vars = outer;
+        let mut vars = self.var_scope_stack.borrow_mut();
+        vars.pop();
     }
+
     fn enter_func_scope(&self, scope: Arc<FuncScope<'f>>) {
         let mut s = self.func_scope.borrow_mut();
         *s = scope;
@@ -147,7 +167,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         let vals = vals.accept(self)?;
         for v in vals {
             // TODO this should bifurcate the execution
-            BindVars::bind(&v?, vars, self.variables.borrow().deref())?;
+            let scope_stack = self.var_scope_stack.borrow();
+            let new_scope = BindVars::bind(&v?, vars, scope_stack.last().unwrap())?;
+            drop(scope_stack);
+            self.set_var_scope(new_scope);
         }
         expr_val_from_value(self.input.clone())
     }
@@ -190,7 +213,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> ExprResult<'e> {
         println!("{:?}", self.func_scope.borrow().as_ref());
-        println!("{:?}", self.variables);
+        println!("{:?}", self.var_scope_stack.borrow().last().unwrap());
         expr.accept(self)
     }
 
@@ -199,7 +222,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             let eval = ExprEval::new(
                 bound_func.func_scope,
                 self.input.clone(),
-                self.variables.borrow().clone(),
+                self.var_scope_stack.borrow().last().unwrap().clone(),
             );
             bound_func.function.filter.accept(&eval)
         } else {
@@ -362,7 +385,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         for v in input {
             let mut update_eval = self.clone();
             update_eval.begin_scope();
-            update_eval.variables.borrow_mut().set_variable(var, v?);
+            update_eval.set_variable(var, v?);
             update_eval.input = acc.clone();
             acc = update.accept(&update_eval)?.next().unwrap()?;
         }
@@ -459,7 +482,7 @@ mod ast_eval_test {
             fn $test_name() {
                 let input = Value::from_str($input).unwrap();
                 let ret = eval_expr($filter, input).unwrap();
-                assert_eq!(ret.len(), 1);
+                assert_eq!(ret.len(), 1, "Eval returned more than one result");
                 assert_eq!(ret[0], Value::from_str($expect).unwrap());
             }
 

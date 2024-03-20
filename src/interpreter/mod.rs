@@ -221,7 +221,7 @@ pub struct BoundFunc<'e> {
 pub struct AstInterpreter {
     builtins: Vec<OwnedFunc>,
     root_filter: Ast,
-    variables: Arc<VarScope>,
+    variables: Arc<VarScope<'static>>,
 }
 
 impl AstInterpreter {
