@@ -25,6 +25,7 @@ mod func_scope {
     use std::sync::Arc;
 
     use crate::interpreter::{Arity, FuncDefArgs, Function};
+    use crate::interpreter::ast_eval::VarScope;
     use crate::parser::expr_ast::AstNode;
 
     #[derive(Default)]
@@ -76,8 +77,14 @@ mod func_scope {
             args: FuncDefArgs,
             filter: &'f AstNode,
             def_scope: Option<&Arc<Self>>,
+            var_scope: &Arc<VarScope<'f>>,
         ) {
-            let func = Function::from_expr(args, filter, def_scope);
+            let func = Function {
+                args,
+                filter,
+                def_scope: def_scope.map(|scope| Arc::downgrade(scope)),
+                var_scope: var_scope.clone(),
+            };
             self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
         }
@@ -160,24 +167,13 @@ pub struct Function<'e> {
     args: FuncDefArgs,
     filter: &'e AstNode,
     def_scope: Option<Weak<FuncScope<'e>>>,
+    var_scope: Arc<VarScope<'e>>,
 }
 
 pub type FuncDefArgs = SmallVec<[String; 5]>;
 pub type FuncRet = Result<Value>;
 
 impl<'e> Function<'e> {
-    pub fn from_expr(
-        args: FuncDefArgs,
-        filter: &'e AstNode,
-        scope: Option<&Arc<FuncScope<'e>>>,
-    ) -> Function<'e> {
-        Function {
-            args,
-            filter,
-            def_scope: scope.map(|scope| Arc::downgrade(scope)),
-        }
-    }
-
     pub fn arity(&self) -> Arity {
         self.args.len()
     }
@@ -191,6 +187,7 @@ impl<'e> Function<'e> {
         func_scope: &Arc<FuncScope<'scope>>,
         arguments: &'scope [AstNode],
         arg_scope: &Arc<FuncScope<'scope>>,
+        var_scope: &Arc<VarScope<'scope>>,
     ) -> BoundFunc<'scope>
     where
         'e: 'scope,
@@ -202,7 +199,13 @@ impl<'e> Function<'e> {
         );
         let mut func_scope = func_scope.new_inner();
         for (name, arg) in self.args.iter().zip(arguments.iter()) {
-            func_scope.push(name.clone(), Default::default(), arg, Some(arg_scope));
+            func_scope.push(
+                name.clone(),
+                Default::default(),
+                arg,
+                Some(arg_scope),
+                var_scope,
+            );
         }
         BoundFunc {
             function: self.clone(),
@@ -244,7 +247,13 @@ impl AstInterpreter {
         let var_scope = self.variables.clone();
         let mut func_scope = FuncScope::default();
         for f in self.builtins.iter() {
-            func_scope.push(f.name.clone(), f.args.clone().into(), &f.filter, None);
+            func_scope.push(
+                f.name.clone(),
+                f.args.clone().into(),
+                &f.filter,
+                None,
+                &VarScope::new(),
+            );
         }
         let func_scope = Arc::new(func_scope);
         let eval = ExprEval::new(func_scope.clone(), input.clone(), var_scope);

@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
@@ -31,10 +30,6 @@ impl<'e> VarScope<'e> {
             parent: None,
         }
         .into()
-    }
-
-    fn get_parent(&self) -> Option<&Self> {
-        self.parent.as_deref()
     }
 
     fn get_variable(&self, name: &str) -> Option<Value> {
@@ -83,8 +78,10 @@ impl<'f> ExprEval<'f> {
         'f: 'expr,
     {
         let scope = self.func_scope.borrow();
+        let var_scope = self.var_scope_stack.borrow();
+        let var_scope = var_scope.last().unwrap();
         let (func, func_scope) = scope.get_func(name, args.len())?;
-        Some(func.bind(&func_scope, args, &*scope))
+        Some(func.bind(&func_scope, args, &*scope, var_scope))
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
@@ -222,7 +219,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             let eval = ExprEval::new(
                 bound_func.func_scope,
                 self.input.clone(),
-                self.var_scope_stack.borrow().last().unwrap().clone(),
+                bound_func.function.var_scope.clone(),
             );
             bound_func.function.filter.accept(&eval)
         } else {
@@ -244,7 +241,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         rhs: &'e AstNode,
     ) -> ExprResult<'e> {
         let mut scope = self.func_scope.borrow().new_inner();
-        scope.push(name.to_owned(), args.into(), body, None);
+        let var_stack = self.var_scope_stack.borrow();
+        let var_scope = var_stack.last().unwrap();
+        scope.push(name.to_owned(), args.into(), body, None, var_scope);
+        drop(var_stack);
         self.enter_func_scope(Arc::new(scope));
         rhs.accept(self)
     }
@@ -501,6 +501,7 @@ mod ast_eval_test {
         [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]
         [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
         [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3"]
+        [var_scope, r#"[. as $a|$a|def a: $a | .+" func" as $a|$a; "out" as $a| a,., $a]"#, "\"in\"", r#"["in func", "in", "out"]"#]
         [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21"]
         [slice_array, ".[1:3]", "[1,2,3,4,5,6]", "[2,3]"]
         [split_1, r#"split(" ")"#, "\"a b c de \"", r#"["a","b","c","de",""]"#]

@@ -13,6 +13,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
         .op(Op::infix(Rule::colon, Assoc::Left))
         .op(Op::infix(Rule::pipe, Assoc::Right))
+        .op(Op::infix(Rule::as_, Assoc::Left)) // https://github.com/jqlang/jq/issues/2446
         .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left)
@@ -26,7 +27,6 @@ fn build_pratt_parser() -> PrattParser<Rule> {
             | Op::infix(Rule::ord, Assoc::Left))
         .op(Op::infix(Rule::add, Assoc::Left) // fmt
             | Op::infix(Rule::sub, Assoc::Left))
-        .op(Op::infix(Rule::as_, Assoc::Left)) // https://github.com/jqlang/jq/issues/2446
         .op(Op::infix(Rule::mul, Assoc::Left)
             | Op::infix(Rule::div, Assoc::Left)
             | Op::infix(Rule::mod_, Assoc::Left))
