@@ -95,7 +95,11 @@ impl Display for AstLoc {
 
 impl Debug for AstLoc {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.expr)
+        if f.alternate() {
+            write!(f, "{:#?}", self.expr)
+        } else {
+            write!(f, "{:?}", self.expr)
+        }
     }
 }
 
