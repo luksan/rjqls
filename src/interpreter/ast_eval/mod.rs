@@ -101,9 +101,9 @@ impl<'f> ExprEval<'f> {
         *scope = scope.set_variable(name, value);
     }
 
-    fn set_var_scope(&self, scope: Arc<VarScope<'f>>) {
-        let mut slot = self.var_scope_stack.borrow_mut();
-        *slot.last_mut().unwrap() = scope;
+    fn current_var_scope(&self) -> Arc<VarScope<'f>> {
+        let scope_stack = self.var_scope_stack.borrow();
+        scope_stack.last().unwrap().clone()
     }
 
     fn begin_scope(&self) {
@@ -160,16 +160,22 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         expr_val_from_value(Value::from(ret.collect::<Result<Vec<_>>>()?))
     }
 
-    fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast) -> ExprResult<'e> {
+    fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> ExprResult<'e> {
         let vals = vals.accept(self)?;
+        let mut ret = Generator::empty();
+        let curr_scope = self.current_var_scope();
+        let mut func_scope = self.func_scope.borrow().clone();
         for v in vals {
-            // TODO this should bifurcate the execution
-            let scope_stack = self.var_scope_stack.borrow();
-            let new_scope = BindVars::bind(&v?, vars, scope_stack.last().unwrap())?;
-            drop(scope_stack);
-            self.set_var_scope(new_scope);
+            let new_scope = BindVars::bind(&v?, vars, &curr_scope)?;
+            let eval = ExprEval {
+                var_scope_stack: vec![new_scope].into(),
+                ..self.clone()
+            };
+            ret = ret.chain(rhs.accept(&eval)?);
+            func_scope = eval.func_scope.into_inner();
         }
-        expr_val_from_value(self.input.clone())
+        self.enter_func_scope(func_scope);
+        Ok(ret)
     }
 
     fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> ExprResult<'e> {
@@ -481,7 +487,7 @@ mod ast_eval_test {
             #[test]
             fn $test_name() {
                 let input = Value::from_str($input).unwrap();
-                let ret = eval_expr($filter, input).unwrap();
+                let ret = eval_expr($filter, input).expect("eval_expr() error");
                 assert_eq!(ret.len(), 1, "Eval returned more than one result");
                 assert_eq!(ret[0], Value::from_str($expect).unwrap());
             }
@@ -502,6 +508,8 @@ mod ast_eval_test {
         [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
         [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3"]
         [var_scope, r#"[. as $a|$a|def a: $a | .+" func" as $a|$a; "out" as $a| a,., $a]"#, "\"in\"", r#"["in func", "in", "out"]"#]
+        [var_scope2, r#"[. as $a|$a|def f: $a | .+" func" as $b|$b; "out" as $c| f,$a, $c]"#, "\"in\"", r#"["in func", "in", "out"]"#]
+        [var_gen, "[1,2,3 as $a | $a]", "null", "[1,2,3]"]
         [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21"]
         [slice_array, ".[1:3]", "[1,2,3,4,5,6]", "[2,3]"]
         [split_1, r#"split(" ")"#, "\"a b c de \"", r#"["a","b","c","de",""]"#]

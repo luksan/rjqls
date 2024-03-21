@@ -116,7 +116,7 @@ pub enum Expr {
     Alternative(Ast, Ast),
     Array(ExprArray),
     Assign(Ast, Ast),
-    BindVars(Ast, Ast),
+    BindVars(Ast, Ast, Ast),
     BinOp(BinOps, Ast, Ast),
     Breakpoint(Ast),
     Call(String, ExprArray),
@@ -162,7 +162,7 @@ impl Expr {
             Expr::Alternative(lhs, rhs) => visitor.visit_alternative(lhs, rhs),
             Expr::Array(r) => visitor.visit_array(r),
             Expr::Assign(lhs, rhs) => unimplemented!(),
-            Expr::BindVars(vals, vars) => visitor.visit_bind_vars(vals, vars),
+            Expr::BindVars(vals, vars, rhs) => visitor.visit_bind_vars(vals, vars, rhs),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
             Expr::Break(name) => unimplemented!(),
             Expr::Breakpoint(ast) => visitor.visit_breakpoint(ast),
@@ -225,7 +225,7 @@ pub trait ExprVisitor<'e, R> {
         self.default()
     }
 
-    fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast) -> R {
+    fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> R {
         vals.accept(self);
         vars.accept(self);
         self.default()

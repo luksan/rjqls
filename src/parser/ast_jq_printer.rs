@@ -53,10 +53,12 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc(']')
     }
 
-    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast) -> () {
+    fn visit_bind_vars(&self, vals: &Ast, vars: &Ast, rhs: &Ast) -> () {
         vals.accept(self);
         self.puts(" as ");
         vars.accept(self);
+        self.putc('|');
+        rhs.accept(self);
     }
 
     fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> () {

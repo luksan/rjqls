@@ -48,8 +48,9 @@ obj_val = { primary ~ postfix * | "(" ~ pratt_expr ~ ")" }
 arr = {"[" ~ pratt_expr? ~ "]"}
 
 variable = ${ "$" ~ ident }
-// the binding is only used to reject invalid bindings, not to actually capture
-variable_binding = { variable | ("[" ~ (variable_binding ~ ","?)+ ~ "]")  | ("{" ~ (ident | string) ~ ":" ~ variable_binding ~ "}") }
+
+// used for destructuring variable binding
+variable_binding = _{ variable | arr | obj }
 
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
@@ -70,7 +71,7 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     arith_assign = ${ (alt | add | sub | mul | div | mod_ ) ~ "=" }
     comma = { "," }
     pipe = { "|" }
-    as_ = { "as" ~ &(variable_binding ~ (EOI | "|")) }
+    as_ = { "as" ~  variable_binding ~  "|" }
   prefix = _{ func_def | dbg_brk_pre }
     dbg_brk_pre = { "§" }
   postfix = _{ idx_chain+ | try_postfix | dbg_brk_post }
@@ -98,14 +99,13 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     string |
     literal |
     ident_primary |
-    var_primary |
+    variable |
     arr |
     primary_group
   }
     dot_primary = { "." }
     call = { ident ~ "(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")" }
     ident_primary = { ident }
-    var_primary = { variable }
     primary_group = { "(" ~ pratt_expr ~ ")" }
     if_cond = { "if" ~ pratt_expr ~ "then" ~ pratt_expr ~ elif* ~ else_? ~ "end" }
     elif = {"elif" ~ pratt_expr ~ "then" ~ pratt_expr}

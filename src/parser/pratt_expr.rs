@@ -11,9 +11,10 @@ fn get_pratt_parser() -> &'static PrattParser<Rule> {
 
 fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
-        .op(Op::infix(Rule::colon, Assoc::Left))
-        .op(Op::infix(Rule::pipe, Assoc::Right))
-        .op(Op::infix(Rule::as_, Assoc::Left)) // https://github.com/jqlang/jq/issues/2446
+        .op(
+            Op::infix(Rule::as_, Assoc::Right) // https://github.com/jqlang/jq/issues/2446
+        | Op::infix(Rule::pipe, Assoc::Right),
+        )
         .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left)
@@ -143,19 +144,20 @@ pub fn parse_func_def(p: Pair<Rule>) -> (String, Vec<String>, Ast) {
             }
             Rule::variable => {
                 let argument = pair.inner_string(1);
-                bound_args.push(Ast::new(
-                    Expr::BindVars(
-                        Ast::new(Expr::Call(argument.clone(), Default::default()), span),
-                        Ast::new(Expr::Variable(argument.clone()), span),
-                    ),
-                    span,
-                ));
+                bound_args.push((argument.clone(), span));
                 args.push(argument);
             }
             Rule::pratt_expr => {
                 let mut filter = pratt_parser(pair.into_inner());
-                for binding in bound_args {
-                    filter = Ast::new(Expr::Pipe(binding, filter), span)
+                for (argument, span) in bound_args.into_iter().rev() {
+                    filter = Ast::new(
+                        Expr::BindVars(
+                            Ast::new(Expr::Call(argument.clone(), Default::default()), span),
+                            Ast::new(Expr::Variable(argument), span),
+                            filter,
+                        ),
+                        span,
+                    );
                 }
                 break (name, args.into(), filter);
             }
@@ -253,7 +255,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     let catch_expr = x.next().map(|catch| parse_inner_expr(catch));
                     Expr::TryCatch(try_expr, catch_expr)
                 }
-                Rule::var_primary => Expr::Variable(p.inner_string(2)),
+                Rule::variable => Expr::Variable(p.inner_string(1)),
                 r => panic!("primary {r:?}"),
             };
             Ast::new(ast, span)
@@ -274,7 +276,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     Expr::BinOp(binop, lhs, rhs)
                 }
                 Rule::alt => Expr::Alternative(lhs, rhs),
-                Rule::as_ => Expr::BindVars(lhs, rhs),
+                Rule::as_ => Expr::BindVars(lhs, pratt_parser(op.into_inner()), rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
                 Rule::assign => Expr::Assign(lhs, rhs),
@@ -482,6 +484,8 @@ mod test_parser {
             [brk_pre, "1+§2*4", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Breakpoint(Literal(Number(2))), Literal(Number(4))))"]
             [brk_post, "1+2*4?§", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Literal(Number(2)), Breakpoint(TryCatch(Literal(Number(4)), None))))"]
 
+            [def_func_vars, "def func($a;$b;c):.;.", r#"DefineFunc { name: "func", args: ["a", "b", "c"], body: BindVars(Call("a", []), Variable("a"), BindVars(Call("b", []), Variable("b"), Dot)), rhs: Dot }"#]
+
             [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
             [iter, ".[]", "Index(Dot, None)"]
             [idx_item, ".a", r#"Index(Dot, Some(Ident("a")))"#],
@@ -509,9 +513,10 @@ mod test_parser {
             [plain_call, "length", "Call(\"length\", [])"]
             [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("c")), value: Literal(Number(6)) }])"#]
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
-            [var_binding, "3 as $a", "BindVars(Literal(Number(3)), Variable(\"a\"))"]
-            [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}]", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]))"#]
-            [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(Pipe(BindVars(Literal(Number(3)), Variable("a")), Variable("a"))), Variable("a"))"#]
+            [var_binding, "3 as $a | .", "BindVars(Literal(Number(3)), Variable(\"a\"), Dot)"]
+            [var_bind_prio, "3 as $a| $a | def f:.; $a", r#"BindVars(Literal(Number(3)), Variable("a"), Pipe(Variable("a"), DefineFunc { name: "f", args: [], body: Dot, rhs: Variable("a") }))"#]
+            [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}] | .", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]), Dot)"#]
+            [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(BindVars(Literal(Number(3)), Variable("a"), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
             [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc { name: "y", args: [], body: Literal(Number(3)), rhs: Dot }])"#]
             [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
