@@ -507,6 +507,7 @@ mod ast_eval_test {
         [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]
         [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
         [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3"]
+        [var_bind_term, "[.[]|.+1 as $v|.]", "[1,4,5,3]", "[2,8,10,6]"] // https://github.com/jqlang/jq/issues/2446
         [var_scope, r#"[. as $a|$a|def a: $a | .+" func" as $a|$a; "out" as $a| a,., $a]"#, "\"in\"", r#"["in func", "in", "out"]"#]
         [var_scope2, r#"[. as $a|$a|def f: $a | .+" func" as $b|$b; "out" as $c| f,$a, $c]"#, "\"in\"", r#"["in func", "in", "out"]"#]
         [var_gen, "[1,2,3 as $a | $a]", "null", "[1,2,3]"]

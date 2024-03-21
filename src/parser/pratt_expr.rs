@@ -11,10 +11,7 @@ fn get_pratt_parser() -> &'static PrattParser<Rule> {
 
 fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
-        .op(
-            Op::infix(Rule::as_, Assoc::Right) // https://github.com/jqlang/jq/issues/2446
-        | Op::infix(Rule::pipe, Assoc::Right),
-        )
+        .op(Op::infix(Rule::pipe, Assoc::Right))
         .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left)
@@ -31,6 +28,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::infix(Rule::mul, Assoc::Left)
             | Op::infix(Rule::div, Assoc::Left)
             | Op::infix(Rule::mod_, Assoc::Left))
+        .op(Op::postfix(Rule::as_)) // https://github.com/jqlang/jq/issues/2446
         .op(Op::infix(Rule::idx_chain_pipe, Assoc::Right)) // virtual pipe in index chain
         .op(Op::postfix(Rule::index) | Op::postfix(Rule::iterate) | Op::postfix(Rule::slice))
         .op(Op::postfix(Rule::try_postfix))
@@ -276,7 +274,6 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     Expr::BinOp(binop, lhs, rhs)
                 }
                 Rule::alt => Expr::Alternative(lhs, rhs),
-                Rule::as_ => Expr::BindVars(lhs, pratt_parser(op.into_inner()), rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
                 Rule::assign => Expr::Assign(lhs, rhs),
@@ -314,6 +311,10 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
         .map_postfix(|expr, op| {
             let span = op.as_span();
             let ast = match op.as_rule() {
+                Rule::as_ => {
+                    let inner = &mut op.into_inner();
+                    Expr::BindVars(expr, next_expr(inner), next_expr(inner))
+                }
                 Rule::dbg_brk_post => Expr::Breakpoint(expr),
                 Rule::index => Expr::Index(expr, Some(parse_inner_expr(op))),
                 Rule::iterate => Expr::Index(expr, None),

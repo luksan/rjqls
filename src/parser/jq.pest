@@ -49,12 +49,9 @@ arr = {"[" ~ pratt_expr? ~ "]"}
 
 variable = ${ "$" ~ ident }
 
-// used for destructuring variable binding
-variable_binding = _{ variable | arr | obj }
-
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix* )* }
-  infix = _{ arith_assign | upd_assign| alt | and | or | ord | eq | neq | assign | add | sub| mul | div | mod_ | comma | pipe | as_ }
+  infix = _{ arith_assign | upd_assign| alt | and | or | ord | eq | neq | assign | add | sub| mul | div | mod_ | comma | pipe }
     alt = {"//"}
     eq = { "==" }
     neq = { "!=" }
@@ -71,10 +68,9 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     arith_assign = ${ (alt | add | sub | mul | div | mod_ ) ~ "=" }
     comma = { "," }
     pipe = { "|" }
-    as_ = { "as" ~  variable_binding ~  "|" }
   prefix = _{ func_def | dbg_brk_pre }
     dbg_brk_pre = { "§" }
-  postfix = _{ idx_chain+ | try_postfix | dbg_brk_post }
+  postfix = _{ idx_chain+ | try_postfix | dbg_brk_post | as_ }
     idx_chain = _{ "."? ~ idx_kinds ~ try_idx? }
     idx_kinds = _{ index | iterate | slice }
     try_idx = _{ idx_chain_pipe ~ idx_chain_dot ~ idx_kinds ~ try_postfix }
@@ -86,6 +82,8 @@ pratt_expr = { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postf
     colon = { ":" }
     try_postfix = { "?"+ }
     dbg_brk_post = { "§" }
+    as_ = { "as" ~  variable_binding ~ "|" ~ pratt_expr }
+    variable_binding = { variable | arr | obj } // used for destructuring variable binding
   primary = _{
     obj |
     if_cond |
