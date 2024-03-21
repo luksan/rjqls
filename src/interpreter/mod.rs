@@ -239,8 +239,9 @@ impl AstInterpreter {
         Ok(this)
     }
 
-    pub fn set_variable(&self, name: String, value: ArcValue) {
-        self.variables.set_variable(name.as_str(), value);
+    pub fn set_variable(&mut self, name: String, value: ArcValue) {
+        // TODO: this is only used for cmdline variables, so leaking is not a huge deal.
+        self.variables = self.variables.set_variable(name.leak(), value);
     }
 
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
