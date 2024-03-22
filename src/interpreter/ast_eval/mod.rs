@@ -502,6 +502,7 @@ mod ast_eval_test {
         [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
         [func_redef, r#"def a: 1; def b: a; def a: "function scope error"; b"#, "0", "1"]
         [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3"]
+        [func_def_scope, ". + def f:3;f | f", "1", "4"]
         [func_complex_scope, r#"def a:"first "; def b(x):a + x; def a: "second"; b(a)"#, "0", "\"first second\""]
         [func_var_arg_name, r#"[ def a(a; $a): a, $a, def a: "inner"; a, $a; a("arg"; "var") ] "#,"null", r#"["var", "var", "inner", "var"]"#]
         [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]

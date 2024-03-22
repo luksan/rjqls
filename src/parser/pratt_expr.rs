@@ -11,13 +11,13 @@ fn get_pratt_parser() -> &'static PrattParser<Rule> {
 
 fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
+        .op(Op::prefix(Rule::func_def))
         .op(Op::infix(Rule::pipe, Assoc::Right))
         .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left)
             | Op::infix(Rule::assign, Assoc::Left)
             | Op::infix(Rule::arith_assign, Assoc::Left))
-        .op(Op::prefix(Rule::func_def))
         .op(Op::infix(Rule::or, Assoc::Left))
         .op(Op::infix(Rule::and, Assoc::Left))
         .op(Op::infix(Rule::eq, Assoc::Left)
@@ -486,6 +486,8 @@ mod test_parser {
             [brk_post, "1+2*4?§", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Literal(Number(2)), Breakpoint(TryCatch(Literal(Number(4)), None))))"]
 
             [def_func_vars, "def func($a;$b;c):.;.", r#"DefineFunc { name: "func", args: ["a", "b", "c"], body: BindVars(Call("a", []), Variable("a"), BindVars(Call("b", []), Variable("b"), Dot)), rhs: Dot }"#]
+            [def_scope, ". + (def f:.;f) | f", r#"Pipe(BinOp(Add, Dot, Scope(DefineFunc { name: "f", args: [], body: Dot, rhs: Call("f", []) })), Call("f", []))"# ]
+            [def_scope2, ". + def f:.;f | f", r#"BinOp(Add, Dot, DefineFunc { name: "f", args: [], body: Dot, rhs: Pipe(Call("f", []), Call("f", [])) })"# ]
 
             [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
             [iter, ".[]", "Index(Dot, None)"]
