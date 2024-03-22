@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -61,21 +60,35 @@ impl<'e> VarScope<'e> {
 pub struct ExprEval<'f> {
     input: Value,
     func_scope: Arc<FuncScope<'f>>,
-    var_scope_stack: RefCell<Vec<Arc<VarScope<'f>>>>,
+    var_scope: Arc<VarScope<'f>>,
 }
 
 impl<'f> ExprEval<'f> {
     pub fn new(func_scope: Arc<FuncScope<'f>>, input: Value, var_scope: Arc<VarScope<'f>>) -> Self {
         Self {
             input,
-            func_scope: func_scope.into(),
-            var_scope_stack: vec![var_scope].into(),
+            func_scope,
+            var_scope,
         }
     }
 
-    fn clone_self_with_func(&self, func_scope: Arc<FuncScope<'f>>) -> Self {
+    fn clone_with_input(&self, input: Value) -> Self {
+        Self {
+            input,
+            ..self.clone()
+        }
+    }
+
+    fn clone_with_func_scope(&self, func_scope: Arc<FuncScope<'f>>) -> Self {
         Self {
             func_scope,
+            ..self.clone()
+        }
+    }
+
+    fn clone_with_var_scope(&self, var_scope: Arc<VarScope<'f>>) -> Self {
+        Self {
+            var_scope,
             ..self.clone()
         }
     }
@@ -85,43 +98,17 @@ impl<'f> ExprEval<'f> {
         'f: 'expr,
     {
         let scope = &self.func_scope;
-        let var_scope = self.var_scope_stack.borrow();
-        let var_scope = var_scope.last().unwrap();
+        let var_scope = &self.var_scope;
         let (func, func_scope) = scope.get_func(name, args.len())?;
         Some(func.bind(&func_scope, args, &*scope, var_scope))
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
         Ok(self
-            .var_scope_stack
-            .borrow()
-            .last()
-            .unwrap()
+            .var_scope
             .get_variable(name)
             .with_context(|| format!("Variable '{name}' is not defined."))
             .into())
-    }
-
-    fn set_variable(&self, name: &'f str, value: Value) {
-        let mut scope = self.var_scope_stack.borrow_mut();
-        let scope = scope.last_mut().unwrap();
-        *scope = scope.set_variable(name, value);
-    }
-
-    fn current_var_scope(&self) -> Arc<VarScope<'f>> {
-        let scope_stack = self.var_scope_stack.borrow();
-        scope_stack.last().unwrap().clone()
-    }
-
-    fn begin_scope(&self) {
-        let mut vars = self.var_scope_stack.borrow_mut();
-        let curr = vars.last().unwrap().clone();
-        vars.push(curr);
-    }
-
-    fn end_scope(&self) {
-        let mut vars = self.var_scope_stack.borrow_mut();
-        vars.pop();
     }
 }
 
@@ -165,13 +152,10 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> ExprResult<'e> {
         let vals = vals.accept(self)?;
         let mut ret = Generator::empty();
-        let curr_scope = self.current_var_scope();
+        let curr_scope = &self.var_scope;
         for v in vals {
             let new_scope = BindVars::bind(&v?, vars, &curr_scope)?;
-            let eval = ExprEval {
-                var_scope_stack: vec![new_scope].into(),
-                ..self.clone()
-            };
+            let eval = self.clone_with_var_scope(new_scope);
             ret = ret.chain(rhs.accept(&eval)?);
         }
         Ok(ret)
@@ -215,7 +199,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> ExprResult<'e> {
         println!("{:?}", self.func_scope.as_ref());
-        println!("{:?}", self.var_scope_stack.borrow().last().unwrap());
+        println!("{:?}", self.var_scope.as_ref());
         expr.accept(self)
     }
 
@@ -246,11 +230,9 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         rhs: &'e AstNode,
     ) -> ExprResult<'e> {
         let mut scope = self.func_scope.new_inner();
-        let var_stack = self.var_scope_stack.borrow();
-        let var_scope = var_stack.last().unwrap();
+        let var_scope = &self.var_scope;
         scope.push(name.to_owned(), args.into(), body, None, var_scope);
-        drop(var_stack);
-        let eval = self.clone_self_with_func(Arc::new(scope));
+        let eval = self.clone_with_func_scope(Arc::new(scope));
         rhs.accept(&eval)
     }
 
@@ -376,31 +358,25 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
 
     fn visit_reduce(
         &self,
-        input: &'e AstNode,
+        input_expr: &'e AstNode,
         var: &'e str,
         init: &'e AstNode,
         update: &'e AstNode,
     ) -> ExprResult<'e> {
-        let input = input.accept(self)?;
+        let input = input_expr.accept(self)?;
         let Some(init) = init.accept(self)?.next() else {
             return Ok(Generator::empty());
         };
-        let mut acc = init?;
+        let mut update_eval = self.clone_with_input(init?);
         for v in input {
-            let mut update_eval = self.clone();
-            update_eval.begin_scope();
-            update_eval.set_variable(var, v?);
-            update_eval.input = acc.clone();
-            acc = update.accept(&update_eval)?.next().unwrap()?;
+            update_eval.var_scope = self.var_scope.set_variable(var, v?);
+            update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
         }
-        expr_val_from_value(acc)
+        expr_val_from_value(update_eval.input)
     }
 
     fn visit_scope(&self, inner: &'e AstNode) -> ExprResult<'e> {
-        self.begin_scope();
-        let r = inner.accept(self);
-        self.end_scope();
-        r
+        inner.accept(self)
     }
 
     fn visit_slice(
