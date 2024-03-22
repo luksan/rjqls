@@ -6,7 +6,7 @@ fn parse_modifiers(mods: &Value) -> Result<(bool, RegexOptions)> {
     let mods = mods
         .as_str()
         .with_context(|| format!("{mods} is not a string"))?;
-    let mut ret = RegexOptions::REGEX_OPTION_CAPTURE_GROUP.clone();
+    let mut ret = RegexOptions::REGEX_OPTION_CAPTURE_GROUP;
     let mut global = false;
     for m in mods.chars() {
         match m {

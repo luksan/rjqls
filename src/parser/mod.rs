@@ -60,7 +60,7 @@ pub fn parse_program(prog: &str) -> Result<Ast> {
 
     let token_iters: Vec<_> = includes
         .iter()
-        .map(|src| JqGrammar::parse(Rule::included_src, &src))
+        .map(|src| JqGrammar::parse(Rule::included_src, src))
         .collect::<Result<_, _>>()?;
 
     let ast = pratt_parser(token_iters.into_iter().flatten().chain(main_prog_tokens));

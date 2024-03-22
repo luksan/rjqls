@@ -75,7 +75,7 @@ impl<'f> ExprEval<'f> {
                     .context("split separator must be a string")?;
                 // TODO: less copying of strings
                 expr_val_from_value(Value::from(
-                    input.split(sep).map(|s| Value::from(s)).collect::<Vec<_>>(),
+                    input.split(sep).map(Value::from).collect::<Vec<_>>(),
                 ))
             }
             ("tostring", 0) => expr_val_from_value(match self.input {

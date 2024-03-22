@@ -88,7 +88,7 @@ fn parse_inner_str(pair: Pair<Rule>) -> Ast {
                 "r" => '\r',
                 "t" => '\t',
                 codept => codept
-                    .strip_prefix("u")
+                    .strip_prefix('u')
                     .and_then(|s| u32::from_str_radix(s, 16).ok())
                     .and_then(char::from_u32)
                     .unwrap_or(char::REPLACEMENT_CHARACTER),
@@ -157,7 +157,7 @@ pub fn parse_func_def(p: Pair<Rule>) -> (String, Vec<String>, Ast) {
                         span,
                     );
                 }
-                break (name, args.into(), filter);
+                break (name, args, filter);
             }
             node => unreachable!("Unexpected node in parse_func_def: {node:?}"),
         }
@@ -210,7 +210,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     let extract = p
                         .next()
                         .map(parse_inner_expr)
-                        .unwrap_or_else(|| Ast::new(Expr::Dot.into(), full_span));
+                        .unwrap_or_else(|| Ast::new(Expr::Dot, full_span));
                     Expr::ForEach(expr, var, init, update, extract)
                 }
                 Rule::ident => Expr::Ident(p.inner_string(0)),

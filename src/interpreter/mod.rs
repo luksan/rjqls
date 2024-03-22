@@ -82,7 +82,7 @@ mod func_scope {
             let func = Function {
                 args,
                 filter,
-                def_scope: def_scope.map(|scope| Arc::downgrade(scope)),
+                def_scope: def_scope.map(Arc::downgrade),
                 var_scope: var_scope.clone(),
             };
             self.funcs
@@ -179,7 +179,7 @@ impl<'e> Function<'e> {
     }
 
     pub fn filter(&self) -> &'e AstNode {
-        &self.filter
+        self.filter
     }
 
     pub fn bind<'scope>(
@@ -266,7 +266,7 @@ impl AstInterpreter {
     fn load_builtins() -> Result<JqModule> {
         let code = include_str!("../builtins/builtin.jq");
         // let code = include_str!("../builtins/rjqls_builtins.jq");
-        parse_module(&code) // TODO implement the complete Jq language
+        parse_module(code)
     }
 }
 

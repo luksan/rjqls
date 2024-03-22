@@ -83,7 +83,7 @@ impl Deref for AstLoc {
     type Target = Expr;
 
     fn deref(&self) -> &Self::Target {
-        &*self.expr
+        &self.expr
     }
 }
 

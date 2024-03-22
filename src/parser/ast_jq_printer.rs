@@ -146,14 +146,14 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
             // don't emit redundant dots
             expr.accept(self);
         }
-        if let Some(&Expr::Ident(ref ident)) = idx.map(|e| &**e) {
+        if let Some(Expr::Ident(ident)) = idx.map(|e| &**e) {
             if !matches!(&**expr, Expr::Dot) {
                 self.putc('.');
             }
             self.puts(ident);
         } else {
             self.putc('[');
-            idx.as_deref().map(|idx| idx.accept(self));
+            idx.map(|idx| idx.accept(self));
             self.putc(']');
         }
     }

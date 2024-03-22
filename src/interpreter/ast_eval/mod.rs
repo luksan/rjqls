@@ -100,7 +100,7 @@ impl<'f> ExprEval<'f> {
         let scope = &self.func_scope;
         let var_scope = &self.var_scope;
         let (func, func_scope) = scope.get_func(name, args.len())?;
-        Some(func.bind(&func_scope, args, &*scope, var_scope))
+        Some(func.bind(&func_scope, args, scope, var_scope))
     }
 
     fn get_variable(&self, name: &str) -> ExprResult<'static> {
@@ -150,11 +150,9 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> ExprResult<'e> {
-        let vals = vals.accept(self)?;
         let mut ret = Generator::empty();
-        let curr_scope = &self.var_scope;
-        for v in vals {
-            let new_scope = BindVars::bind(&v?, vars, &curr_scope)?;
+        for v in vals.accept(self)? {
+            let new_scope = BindVars::bind(&v?, vars, &self.var_scope)?;
             let eval = self.clone_with_var_scope(new_scope);
             ret = ret.chain(rhs.accept(&eval)?);
         }

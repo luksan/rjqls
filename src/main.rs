@@ -159,7 +159,7 @@ fn build_input_value_iterator(
         let raw_values = input_files.into_iter().map(|file| {
             std::fs::read_to_string(file)
                 .context("Couldn't read {file}")
-                .map(|s| Value::from(s))
+                .map(Value::from)
         });
         if !copts.raw_input {
             return Box::new(raw_values.map(|res| {
@@ -177,10 +177,11 @@ fn build_input_value_iterator(
         )
     } else {
         // raw input
-        Box::new(stdin().lines().map(|res| {
-            res.map(|s| Value::from(s))
-                .context("Failed to read from stdin")
-        }))
+        Box::new(
+            stdin()
+                .lines()
+                .map(|res| res.map(Value::from).context("Failed to read from stdin")),
+        )
     };
     input_iter
 }
