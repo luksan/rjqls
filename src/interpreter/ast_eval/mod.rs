@@ -60,7 +60,7 @@ impl<'e> VarScope<'e> {
 #[derive(Debug, Clone)]
 pub struct ExprEval<'f> {
     input: Value,
-    func_scope: RefCell<Arc<FuncScope<'f>>>,
+    func_scope: Arc<FuncScope<'f>>,
     var_scope_stack: RefCell<Vec<Arc<VarScope<'f>>>>,
 }
 
@@ -73,11 +73,18 @@ impl<'f> ExprEval<'f> {
         }
     }
 
+    fn clone_self_with_func(&self, func_scope: Arc<FuncScope<'f>>) -> Self {
+        Self {
+            func_scope,
+            ..self.clone()
+        }
+    }
+
     fn get_function<'expr>(&self, name: &str, args: &'expr [AstNode]) -> Option<BoundFunc<'expr>>
     where
         'f: 'expr,
     {
-        let scope = self.func_scope.borrow();
+        let scope = &self.func_scope;
         let var_scope = self.var_scope_stack.borrow();
         let var_scope = var_scope.last().unwrap();
         let (func, func_scope) = scope.get_func(name, args.len())?;
@@ -115,11 +122,6 @@ impl<'f> ExprEval<'f> {
     fn end_scope(&self) {
         let mut vars = self.var_scope_stack.borrow_mut();
         vars.pop();
-    }
-
-    fn enter_func_scope(&self, scope: Arc<FuncScope<'f>>) {
-        let mut s = self.func_scope.borrow_mut();
-        *s = scope;
     }
 }
 
@@ -164,7 +166,6 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         let vals = vals.accept(self)?;
         let mut ret = Generator::empty();
         let curr_scope = self.current_var_scope();
-        let mut func_scope = self.func_scope.borrow().clone();
         for v in vals {
             let new_scope = BindVars::bind(&v?, vars, &curr_scope)?;
             let eval = ExprEval {
@@ -172,9 +173,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
                 ..self.clone()
             };
             ret = ret.chain(rhs.accept(&eval)?);
-            func_scope = eval.func_scope.into_inner();
         }
-        self.enter_func_scope(func_scope);
         Ok(ret)
     }
 
@@ -215,7 +214,7 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
     }
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> ExprResult<'e> {
-        println!("{:?}", self.func_scope.borrow().as_ref());
+        println!("{:?}", self.func_scope.as_ref());
         println!("{:?}", self.var_scope_stack.borrow().last().unwrap());
         expr.accept(self)
     }
@@ -246,13 +245,13 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
         body: &'e AstNode,
         rhs: &'e AstNode,
     ) -> ExprResult<'e> {
-        let mut scope = self.func_scope.borrow().new_inner();
+        let mut scope = self.func_scope.new_inner();
         let var_stack = self.var_scope_stack.borrow();
         let var_scope = var_stack.last().unwrap();
         scope.push(name.to_owned(), args.into(), body, None, var_scope);
         drop(var_stack);
-        self.enter_func_scope(Arc::new(scope));
-        rhs.accept(self)
+        let eval = self.clone_self_with_func(Arc::new(scope));
+        rhs.accept(&eval)
     }
 
     fn visit_dot(&self) -> ExprResult<'e> {
@@ -372,7 +371,6 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             rhs_eval.input = value?;
             ret = ret.chain(rhs.accept(&rhs_eval)?);
         }
-        self.enter_func_scope(rhs_eval.func_scope.take());
         Ok(ret)
     }
 
@@ -523,6 +521,13 @@ mod ast_eval_test {
         let filter = "(3 as $a | $a) | $a";
         let err = eval_expr(filter, ().into()).unwrap_err();
         assert_eq!(&err.to_string(), "Variable 'a' is not defined.")
+    }
+
+    #[test]
+    fn test_scope_fail_func() {
+        let filter = "(def a:.;.) | a";
+        let err = eval_expr(filter, ().into()).unwrap_err();
+        assert_eq!(&err.to_string(), "Function a/0 not found.")
     }
 
     fn eval_expr(filter: &str, input: Value) -> Result<Vec<Value>> {
