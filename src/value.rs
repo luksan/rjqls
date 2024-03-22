@@ -480,7 +480,12 @@ impl ValueOps for ArcValue {
                 .with_context(|| format!("Can't index object with {index}."))?;
             return Ok(o.get(idx).cloned().unwrap_or(Self::Null));
         }
-        let idx = index.as_u64().context("Index is not a number")? as usize;
+        let idx = index.as_f64().context("Index is not a number")?;
+        let idx: usize = if idx >= 0.0 {
+            idx
+        } else {
+            self.length()?.as_f64().unwrap() + idx
+        } as _;
         if let Self::Array(v) = self {
             return Ok(v.0.get(idx).cloned().unwrap_or(Self::Null));
         }
@@ -511,97 +516,17 @@ impl ValueOps for ArcValue {
     }
 }
 
-impl ValueOps for JsonValue {
-    fn add(&self, other: &Self) -> Result<Self> {
-        Ok(match (self, other) {
-            (Self::Null, b) => b.clone(),
-            (a, Self::Null) => a.clone(),
-            (Self::Array(a), Self::Array(b)) => {
-                Self::Array(a.iter().chain(b.iter()).cloned().collect())
-            }
+#[cfg(test)]
+mod value_tests {
+    use super::*;
 
-            (Self::Number(a), Self::Number(b)) => {
-                (a.as_f64().unwrap() + b.as_f64().unwrap()).into()
-            }
-            (Self::Object(a), Self::Object(b)) => {
-                let mut sum = a.clone();
-                sum.extend(b.iter().map(|(k, v)| (k.clone(), v.clone())));
-                Self::Object(sum)
-            }
-            (a, b) => bail!("Can't add {a:?} and {b:?}"),
-        })
-    }
+    #[test]
+    fn test_index() {
+        let arr = ArcValue::from_str("[1,2,3,4]").unwrap();
+        let neg1: ArcValue = (-1.0f64).into();
 
-    fn sub(&self, other: &Self) -> Result<Self> {
-        Ok(match (self, other) {
-            (Self::Number(a), Self::Number(b)) => {
-                (a.as_f64().unwrap() - b.as_f64().unwrap()).into()
-            }
-            (a, b) => bail!("Can't subtract {b:?} from {a:?}"),
-        })
-    }
-    fn mul(&self, other: &Self) -> Result<Self> {
-        let (Some(a), Some(b)) = (self.as_f64(), other.as_f64()) else {
-            bail!("Can't multiply {self} with {other}.");
-        };
-        Ok((a * b).into())
-    }
-    fn div(&self, other: &Self) -> Result<Self> {
-        let (Some(a), Some(b)) = (self.as_f64(), other.as_f64()) else {
-            bail!("Can't divide {self} with {other}.");
-        };
-        Ok((a / b).into())
-    }
-
-    fn is_truthy(&self) -> bool {
-        match self {
-            Self::Null => false,
-            Self::Bool(b) => *b,
-            _ => true,
-        }
-    }
-
-    fn less_than(&self, other: &Self) -> Self {
-        Self::Bool(match (self, other) {
-            (Self::Null, _) => false,
-            _ => unimplemented!(),
-        })
-    }
-
-    fn index(&self, index: &Self) -> Result<Self> {
-        if let Self::Object(o) = self {
-            let idx = index
-                .as_str()
-                .with_context(|| format!("Can't index object with {index}."))?;
-            return Ok(o.get(idx).cloned().unwrap_or(Self::Null));
-        }
-        let idx = index.as_u64().context("Index is not a number")? as usize;
-        if let Self::Array(v) = self {
-            return Ok(v.get(idx).cloned().unwrap_or(Self::Null));
-        }
-
-        unimplemented!()
-    }
-
-    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Self> + '_>> {
-        match self {
-            Self::Array(v) => Ok(Box::new(v.iter())),
-            Self::Object(o) => Ok(Box::new(o.iter().map(|(_k, v)| v))),
-            _ => bail!("Can't iterate over {self:?}."),
-        }
-    }
-
-    fn length(&self) -> Result<Self> {
-        let len: usize = match self {
-            Self::Null => 0,
-            Self::Bool(_) => {
-                bail!("Bool has no length.")
-            }
-            Self::Number(_) => return Ok(self.clone()),
-            Self::String(s) => s.len(),
-            Self::Array(a) => a.len(),
-            Self::Object(o) => o.len(),
-        };
-        Ok(Self::Number(JsonNumber::from(len)))
+        assert_eq!(arr.index(&0i32.into()).unwrap(), 1i32.into());
+        assert_eq!(arr.index(&1i32.into()).unwrap(), 2i32.into());
+        assert_eq!(arr.index(&neg1).unwrap(), 4i32.into());
     }
 }
