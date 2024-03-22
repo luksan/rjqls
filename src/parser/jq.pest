@@ -44,7 +44,9 @@ obj = { "{" ~ (obj_pair ~ ("," ~ obj_pair)*)? ~ "}" }
 
 obj_pair = { obj_key ~ ":" ~ obj_val }
 obj_key = { ident | string | variable | ("(" ~ pratt_expr ~ ")") }
-obj_val = { primary ~ postfix * | "(" ~ pratt_expr ~ ")" }
+obj_val = { "(" ~ pratt_expr ~ ")" | obj_val_nobrackets }
+// only pipe is allowed as infix op without brackets in object construction
+obj_val_nobrackets = _{ prefix* ~ primary ~ postfix* ~ (pipe ~ prefix* ~ primary ~ postfix* )* }
 arr = {"[" ~ pratt_expr? ~ "]"}
 
 variable = ${ "$" ~ ident }

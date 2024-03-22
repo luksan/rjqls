@@ -432,6 +432,9 @@ mod test_parser {
             [obj_a, "{a: 1}"]
 
             [idx_ident, ".a"]
+            [idx_in_obj, "{a: .[-1]|.}"]
+            [idx_in_arr, "[.[-1]|.]"]
+
             [chained_index_try, ".[1]?[2]?[3]"]
             [comma_idx_try, "1,2,.a[2]?", "1,2,.a.[2]?"]
             [idx_chained_ident, ".a.b.c"]
@@ -451,7 +454,10 @@ mod test_parser {
         ];
 
         fn assert_ast_fmt(filter: &str, ref_flt: &str) {
-            let ast = parse_pratt_ast(filter).unwrap();
+            let ast = match parse_pratt_ast(filter) {
+                Ok(a) => a,
+                Err(e) => panic!("{e:?}"),
+            };
             let str_rep = format!("{ast}");
             if str_rep != ref_flt {
                 println!("{ast:#?}");
@@ -558,7 +564,7 @@ mod test_parser {
     }
 
     fn parse_pratt_ast(filter: &str) -> Result<Ast> {
-        let pairs = parse_pratt(filter).unwrap();
+        let pairs = parse_pratt(filter)?;
         let x = pairs.clone();
         match catch_unwind(|| pratt_parser(pairs)) {
             Ok(a) => return Ok(a),
@@ -571,13 +577,10 @@ mod test_parser {
     }
 
     fn parse_pratt(filter: &str) -> Result<Pairs<Rule>> {
-        let res = JqGrammar::parse(Rule::pratt_prog, filter);
-        let Err(err) = res else {
-            let pratt_prog = res.unwrap().next().unwrap();
-            let pratt_expr = pratt_prog.into_inner().next().unwrap();
-            return Ok(pratt_expr.into_inner());
-        };
-        panic!("failed to parse {filter} -> {:?}", dbg!(err))
+        let mut res = JqGrammar::parse(Rule::pratt_prog, filter)?;
+        let pratt_prog = res.next().unwrap();
+        let pratt_expr = pratt_prog.into_inner().next().unwrap();
+        Ok(pratt_expr.into_inner())
     }
 
     #[test]

@@ -267,7 +267,7 @@ struct ChainedIndexPipeRemover {
 impl ChainedIndexPipeRemover {
     fn new() -> Self {
         Self {
-            is_chained_idx: true.into(),
+            is_chained_idx: false.into(),
         }
     }
 
@@ -288,6 +288,7 @@ impl ExprVisitor<'_, ()> for ChainedIndexPipeRemover {
     }
 
     fn visit_index(&self, expr: &AstNode, _idx: Option<&AstNode>) {
+        self.is_chained_idx.set(true);
         expr.accept(self)
     }
 
