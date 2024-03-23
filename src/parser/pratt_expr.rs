@@ -12,7 +12,7 @@ fn get_pratt_parser() -> &'static PrattParser<Rule> {
 fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
         .op(Op::prefix(Rule::func_def))
-        .op(Op::infix(Rule::pipe, Assoc::Right))
+        .op(Op::infix(Rule::pipe, Assoc::Right) | Op::infix(Rule::labeled_pipe, Assoc::Right))
         .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
         .op(Op::infix(Rule::upd_assign, Assoc::Left)
@@ -199,7 +199,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     }
                     Expr::Call(ident, params)
                 }
-                Rule::dot_primary | Rule::idx_chain_dot => Expr::Dot,
+                Rule::dot_primary | Rule::idx_chain_dot | Rule::pipe_label => Expr::Dot,
                 Rule::foreach => {
                     let full_span = p.as_span();
                     let p = &mut p.into_inner();
@@ -216,11 +216,10 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                 Rule::ident => Expr::Ident(p.inner_string(0)),
                 Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
                 Rule::if_cond => parse_if_expr(p),
-                Rule::label => Expr::Label(p.inner_string(2)),
                 Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(parse_object(p)),
                 Rule::pratt_expr => return pratt_parser(p.into_inner()),
-                Rule::primary_group => Expr::Scope(parse_inner_expr(p)),
+                Rule::primary_group => Expr::Scope(parse_inner_expr(p)), // FIXME: remove Scope from AST
                 Rule::reduce => {
                     let x = &mut p.into_inner();
                     let input = next_expr(x);
@@ -275,6 +274,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                 }
                 Rule::alt => Expr::Alternative(lhs, rhs),
                 Rule::comma => Expr::Comma(lhs, rhs),
+                Rule::labeled_pipe => Expr::LabeledPipe(op.inner_string(2), lhs, rhs),
                 Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
                 Rule::assign => Expr::Assign(lhs, rhs),
                 Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
@@ -515,6 +515,9 @@ mod test_parser {
             [slice, ".[1:2]", "Slice(Dot, Some(Literal(Number(1))), Some(Literal(Number(2))))"]
             [slice_start, ".[1:]", "Slice(Dot, Some(Literal(Number(1))), None)"]
             [slice_end, ".[:1]", "Slice(Dot, None, Some(Literal(Number(1))))"]
+
+            [label_1, "label $a | .", r#"LabeledPipe("a", Dot, Dot)"#]
+            [label_2, "1 + label $a | break $a", r#"LabeledPipe("a", BinOp(Add, Literal(Number(1)), Dot), Break("a"))"#]
 
             [ua_add, ".x += 1", r#"UpdateAssign(Index(Dot, Some(Ident("x"))), BinOp(Add, Dot, Literal(Number(1))))"#]
 

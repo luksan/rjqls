@@ -118,6 +118,7 @@ pub enum Expr {
     Assign(Ast, Ast),
     BindVars(Ast, Ast, Ast),
     BinOp(BinOps, Ast, Ast),
+    Break(String),
     Breakpoint(Ast),
     Call(String, ExprArray),
     Comma(Ast, Ast),
@@ -133,6 +134,7 @@ pub enum Expr {
     // the first vec is conditions, the second is true branches, with else as the last element
     IfElse(ExprArray, ExprArray),
     Index(Ast, Option<Ast>), // [2]
+    LabeledPipe(String, Ast, Ast),
     Literal(Value),
     Object(Vec<ObjectEntry>),
     Pipe(Ast, Ast),
@@ -143,8 +145,6 @@ pub enum Expr {
     TryCatch(Ast, Option<Ast>),
     UpdateAssign(Ast, Ast),
     Variable(String),
-    Label(String),
-    Break(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -179,7 +179,7 @@ impl Expr {
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
-            Expr::Label(name) => unimplemented!(),
+            Expr::LabeledPipe(label, lhs, rhs) => visitor.visit_pipe(lhs, rhs), // TODO !!!!
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
