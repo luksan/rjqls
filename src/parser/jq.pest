@@ -53,11 +53,7 @@ variable = ${ "$" ~ ident }
 
 pratt_prog = { SOI ~ pratt_expr ~ EOI }
 pratt_expr = { ppp ~ (infix ~ ppp)* }
-  ppp = _{ label? ~ prefix * ~ primary ~ postfix* }
-  label = _{ pipe_label ~ labeled_pipe } // A label has to generate both a primary and an infix token from the same source span
-    label_ = _{ "label" ~ variable ~ "|" }
-    pipe_label = { &label_ } // Dot in the AST
-    labeled_pipe = { label_ } // pratt parsed as infix
+  ppp = _{ prefix * ~ primary ~ postfix* }
   infix = _{ arith_assign | upd_assign| alt | and | or | ord | eq | neq | assign | add | sub| mul | div | mod_ | comma | pipe }
     alt = {"//"}
     eq = { "==" }
@@ -75,8 +71,12 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
     arith_assign = ${ (alt | add | sub | mul | div | mod_ ) ~ "=" }
     comma = { "," }
     pipe = { "|" }
-  prefix = _{ func_def | dbg_brk_pre }
+  prefix = _{ label | func_def | dbg_brk_pre }
     dbg_brk_pre = { "§" }
+    label = _{ pipe_label ~ labeled_pipe } // A label has to generate both a primary and an infix token from the same source span
+      label_ = _{ "label" ~ variable ~ "|" }
+      pipe_label = { &label_ } // Dot in the AST
+      labeled_pipe = { label_ } // pratt parsed as infix
   postfix = _{ idx_chain+ | try_postfix | dbg_brk_post | as_ }
     idx_chain = _{ "."? ~ idx_kinds ~ try_idx? }
     idx_kinds = _{ index | iterate | slice }
