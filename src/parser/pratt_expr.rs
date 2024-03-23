@@ -445,6 +445,7 @@ mod test_parser {
             [slice, ".[4:-6]"],
 
             [label_1, "label $a|."]
+            [label_2, "1 + label $a|break $a"]
 
             [alternate_op, "false//1"]
             [binop_and, "true and false"]

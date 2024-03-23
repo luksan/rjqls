@@ -67,6 +67,11 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
+    fn visit_break(&self, name: &'_ str) -> () {
+        self.puts("break $");
+        self.puts(name);
+    }
+
     fn visit_breakpoint(&self, expr: &'_ Ast) -> () {
         self.puts("§(");
         expr.accept(self);

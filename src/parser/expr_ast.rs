@@ -164,7 +164,7 @@ impl Expr {
             Expr::Assign(lhs, rhs) => unimplemented!(),
             Expr::BindVars(vals, vars, rhs) => visitor.visit_bind_vars(vals, vars, rhs),
             Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
-            Expr::Break(name) => unimplemented!(),
+            Expr::Break(name) => visitor.visit_break(name),
             Expr::Breakpoint(ast) => visitor.visit_breakpoint(ast),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
@@ -234,6 +234,9 @@ pub trait ExprVisitor<'e, R> {
     fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> R {
         lhs.accept(self);
         rhs.accept(self);
+        self.default()
+    }
+    fn visit_break(&self, name: &'e str) -> R {
         self.default()
     }
     fn visit_breakpoint(&self, expr: &'e Ast) -> R {
