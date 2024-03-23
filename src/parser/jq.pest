@@ -100,17 +100,15 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
     reduce |
     try_catch|
     dot_primary |
+    literal |
     call |
     string |
-    literal |
-    ident_primary |
     variable |
     arr |
     primary_group
   }
     dot_primary = { "." }
-    call = { ident ~ "(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")" }
-    ident_primary = { ident }
+    call = { ident ~ ("(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")")? }
     primary_group = { "(" ~ pratt_expr ~ ")" }
     if_cond = { "if" ~ pratt_expr ~ "then" ~ pratt_expr ~ elif* ~ else_? ~ "end" }
     elif = {"elif" ~ pratt_expr ~ "then" ~ pratt_expr}

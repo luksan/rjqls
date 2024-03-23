@@ -484,6 +484,7 @@ mod ast_eval_test {
         [var_scope, r#"[. as $a|$a|def a: $a | .+" func" as $a|$a; "out" as $a| a,., $a]"#, "\"in\"", r#"["in func", "in", "out"]"#]
         [var_scope2, r#"[. as $a|$a|def f: $a | .+" func" as $b|$b; "out" as $c| f,$a, $c]"#, "\"in\"", r#"["in func", "in", "out"]"#]
         [var_gen, "[1,2,3 as $a | $a]", "null", "[1,2,3]"]
+        [redef_literal, "def false: true; false", "null", "false"]
         [reduce, "reduce .[] as $a (0; $a + .)", "[1,2,3,4,5,6]", "21"]
         [slice_array, ".[1:3]", "[1,2,3,4,5,6]", "[2,3]"]
         [split_1, r#"split(" ")"#, "\"a b c de \"", r#"["a","b","c","de",""]"#]

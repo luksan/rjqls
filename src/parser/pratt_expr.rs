@@ -214,7 +214,6 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
                     Expr::ForEach(expr, var, init, update, extract)
                 }
                 Rule::ident => Expr::Ident(p.inner_string(0)),
-                Rule::ident_primary => Expr::Call(p.inner_string(1), Default::default()),
                 Rule::if_cond => parse_if_expr(p),
                 Rule::literal => Expr::Literal(parse_literal(p)),
                 Rule::obj => Expr::Object(parse_object(p)),
