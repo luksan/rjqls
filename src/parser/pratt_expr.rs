@@ -444,6 +444,8 @@ mod test_parser {
             [nested_funcs,"def o(a): 1,def i1: a; a + i1; o(10)"],
             [slice, ".[4:-6]"],
 
+            [label_1, "label $a|."]
+
             [alternate_op, "false//1"]
             [binop_and, "true and false"]
             [try1, "try 1"],

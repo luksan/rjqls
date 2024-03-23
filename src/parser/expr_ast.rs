@@ -179,7 +179,7 @@ impl Expr {
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
-            Expr::LabeledPipe(label, lhs, rhs) => visitor.visit_pipe(lhs, rhs), // TODO !!!!
+            Expr::LabeledPipe(label, lhs, rhs) => visitor.visit_labeled_pipe(label, lhs, rhs),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
             Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
@@ -286,6 +286,11 @@ pub trait ExprVisitor<'e, R> {
             e.key.accept(self);
             e.value.accept(self);
         }
+        self.default()
+    }
+    fn visit_labeled_pipe(&self, label: &'e str, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
+        lhs.accept(self);
+        rhs.accept(self);
         self.default()
     }
     fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> R {

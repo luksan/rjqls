@@ -343,6 +343,23 @@ impl<'e> ExprVisitor<'e, ExprResult<'e>> for ExprEval<'e> {
             .into())
     }
 
+    fn visit_labeled_pipe(
+        &self,
+        label: &'e str,
+        lhs: &'e AstNode,
+        rhs: &'e AstNode,
+    ) -> ExprResult<'e> {
+        // TODO: implement "break"
+        let lhs = lhs.accept(self)?;
+        let mut ret = Generator::empty();
+        let mut rhs_eval = self.clone();
+        for value in lhs {
+            rhs_eval.input = value?;
+            ret = ret.chain(rhs.accept(&rhs_eval)?);
+        }
+        Ok(ret)
+    }
+
     fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> ExprResult<'e> {
         let lhs = lhs.accept(self)?;
         let mut ret = Generator::empty();
