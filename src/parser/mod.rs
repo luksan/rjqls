@@ -63,8 +63,7 @@ pub fn parse_program(prog: &str) -> Result<Ast> {
         .map(|src| JqGrammar::parse(Rule::included_src, src))
         .collect::<Result<_, _>>()?;
 
-    let ast = pratt_parser(token_iters.into_iter().flatten().chain(main_prog_tokens));
-    Ok(ast)
+    pratt_parser(token_iters.into_iter().flatten().chain(main_prog_tokens))
 }
 
 pub struct JqModule {
@@ -83,7 +82,7 @@ pub fn parse_module(code: &str) -> Result<JqModule> {
     for p in pairs.next().unwrap().into_inner() {
         match p.as_rule() {
             Rule::func_def => {
-                let (name, args, filter) = parse_func_def(p);
+                let (name, args, filter) = parse_func_def(p)?;
                 functions.push(OwnedFunc { name, args, filter });
             }
             Rule::EOI => break,

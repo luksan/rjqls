@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use anyhow::Result;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
@@ -38,12 +39,14 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::prefix(Rule::dbg_brk_pre) | Op::postfix(Rule::dbg_brk_post))
 }
 
-pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
+pub type ParseResult = Result<Ast>;
+
+pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Result<Ast> {
     let parser = JqPrattParser::new();
     parser.pratt_parser(pairs)
 }
 
-pub fn parse_func_def(pair: Pair<'_, Rule>) -> (String, Vec<String>, Ast) {
+pub fn parse_func_def(pair: Pair<'_, Rule>) -> Result<(String, Vec<String>, Ast)> {
     let parser = JqPrattParser::new();
     parser.parse_func_def(pair)
 }
@@ -53,7 +56,7 @@ fn parse_literal(pairs: Pair<Rule>) -> Value {
     literal.as_str().parse().unwrap()
 }
 
-fn parse_inner_str(pair: Pair<Rule>) -> Ast {
+fn parse_inner_str(pair: Pair<Rule>) -> ParseResult {
     let span = pair.as_span();
     let pairs = pair.into_inner();
     let mut ret = String::with_capacity(pairs.len());
@@ -73,14 +76,15 @@ fn parse_inner_str(pair: Pair<Rule>) -> Ast {
                 codept => codept
                     .strip_prefix('u')
                     .and_then(|s| u32::from_str_radix(s, 16).ok())
-                    .and_then(char::from_u32)
+                    .and_then(char::from_u32) // FIXME: this should probably be decode_utf16
                     .unwrap_or(char::REPLACEMENT_CHARACTER),
             }),
             _ => unreachable!(),
         }
     }
-    Ast::new(Expr::Literal(ret.into()), span)
+    Ok(Ast::new(Expr::Literal(ret.into()), span))
 }
+
 fn vec_from_commas(mut ast: Ast) -> ExprArray {
     let mut ret = Vec::new();
     while let Expr::Comma(l, r) = *ast.expr {
@@ -131,10 +135,10 @@ impl JqPrattParser {
         lbl
     }
 
-    fn parse_object(&self, pair: Pair<Rule>) -> Vec<ObjectEntry> {
+    fn parse_object(&self, pair: Pair<Rule>) -> Result<Vec<ObjectEntry>> {
         let pairs = pair.into_inner();
         if pairs.len() == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
         let mut ret = Vec::with_capacity(pairs.len());
         for entry in pairs {
@@ -143,18 +147,18 @@ impl JqPrattParser {
             let key = inner.next().unwrap();
             let value = inner.next().unwrap();
             ret.push(ObjectEntry {
-                key: self.pratt_parser(key.into_inner()),
-                value: self.pratt_parser(value.into_inner()),
+                key: self.pratt_parser(key.into_inner())?,
+                value: self.pratt_parser(value.into_inner())?,
             })
         }
-        ret
+        Ok(ret)
     }
 
-    fn parse_if_expr(&self, pair: Pair<Rule>) -> Expr {
+    fn parse_if_expr(&self, pair: Pair<Rule>) -> Result<Expr> {
         let full_span = pair.as_span();
         let mut pairs = pair.into_inner();
-        let cond = self.pratt_parser(pairs.next().unwrap().into_inner());
-        let if_true = self.pratt_parser(pairs.next().unwrap().into_inner());
+        let cond = self.pratt_parser(pairs.next().unwrap().into_inner())?;
+        let if_true = self.pratt_parser(pairs.next().unwrap().into_inner())?;
         let mut cond = vec![cond];
         let mut branch = vec![if_true];
         let mut else_ = Ast::new(Expr::Dot, full_span);
@@ -162,23 +166,23 @@ impl JqPrattParser {
             match p.as_rule() {
                 Rule::elif => {
                     let mut x = p.into_inner();
-                    let c = self.pratt_parser(x.next().unwrap().into_inner());
-                    let b = self.pratt_parser(x.next().unwrap().into_inner());
+                    let c = self.pratt_parser(x.next().unwrap().into_inner())?;
+                    let b = self.pratt_parser(x.next().unwrap().into_inner())?;
                     cond.push(c);
                     branch.push(b);
                 }
                 Rule::else_ => {
-                    else_ = self.pratt_parser(p.into_inner());
+                    else_ = self.pratt_parser(p.into_inner())?;
                     break;
                 }
                 _ => unreachable!(),
             }
         }
         branch.push(else_);
-        Expr::IfElse(cond, branch)
+        Ok(Expr::IfElse(cond, branch))
     }
 
-    pub fn parse_func_def(&self, p: Pair<Rule>) -> (String, Vec<String>, Ast) {
+    pub fn parse_func_def(&self, p: Pair<Rule>) -> Result<(String, Vec<String>, Ast)> {
         let mut pairs = p.into_inner();
         let name = pairs.next().unwrap().as_str().to_owned();
         let mut args = Vec::new();
@@ -197,7 +201,7 @@ impl JqPrattParser {
                     args.push(argument);
                 }
                 Rule::pratt_expr => {
-                    let mut filter = self.pratt_parser(pair.into_inner());
+                    let mut filter = self.pratt_parser(pair.into_inner())?;
                     for (argument, span) in bound_args.into_iter().rev() {
                         filter = Ast::new(
                             Expr::BindVars(
@@ -208,23 +212,23 @@ impl JqPrattParser {
                             span,
                         );
                     }
-                    break (name, args, filter);
+                    break Ok((name, args, filter));
                 }
                 node => unreachable!("Unexpected node in parse_func_def: {node:?}"),
             }
         }
     }
 
-    fn parse_inner_expr(&self, pair: Pair<Rule>) -> Ast {
+    fn parse_inner_expr(&self, pair: Pair<Rule>) -> ParseResult {
         let x = pair.into_inner();
         pratt_parser(x)
     }
 
-    fn next_expr(&self, pairs: &mut Pairs<Rule>) -> Ast {
+    fn next_expr(&self, pairs: &mut Pairs<Rule>) -> ParseResult {
         pratt_parser(pairs.next().unwrap().into_inner())
     }
 
-    fn pratt_parser<'a>(&self, pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
+    fn pratt_parser<'a>(&self, pairs: impl Iterator<Item = Pair<'a, Rule>>) -> ParseResult {
         let pratt = get_pratt_parser();
 
         pratt
@@ -234,7 +238,7 @@ impl JqPrattParser {
                     Rule::arr => {
                         let p = p.into_inner();
                         let arr = if p.len() > 0 {
-                            vec_from_commas(self.pratt_parser(p))
+                            vec_from_commas(self.pratt_parser(p)?)
                         } else {
                             vec![]
                         };
@@ -246,7 +250,7 @@ impl JqPrattParser {
                         let ident = x.next().unwrap().inner_string(0);
                         let mut params = Vec::new();
                         for param in x {
-                            let param = self.parse_inner_expr(param);
+                            let param = self.parse_inner_expr(param)?;
                             params.push(param);
                         }
                         Expr::Call(ident, params)
@@ -255,28 +259,29 @@ impl JqPrattParser {
                     Rule::foreach => {
                         let full_span = p.as_span();
                         let p = &mut p.into_inner();
-                        let expr = self.next_expr(p);
+                        let expr = self.next_expr(p)?;
                         let var = p.next().unwrap().inner_string(1);
-                        let init = self.next_expr(p);
-                        let update = self.next_expr(p);
+                        let init = self.next_expr(p)?;
+                        let update = self.next_expr(p)?;
                         let extract = p
                             .next()
                             .map(|x| self.parse_inner_expr(x))
+                            .transpose()?
                             .unwrap_or_else(|| Ast::new(Expr::Dot, full_span));
                         Expr::ForEach(expr, var, init, update, extract)
                     }
                     Rule::ident => Expr::Ident(p.inner_string(0)),
-                    Rule::if_cond => self.parse_if_expr(p),
+                    Rule::if_cond => self.parse_if_expr(p)?,
                     Rule::literal => Expr::Literal(parse_literal(p)),
-                    Rule::obj => Expr::Object(self.parse_object(p)),
+                    Rule::obj => Expr::Object(self.parse_object(p)?),
                     Rule::pratt_expr => return self.pratt_parser(p.into_inner()),
-                    Rule::primary_group => Expr::Scope(self.parse_inner_expr(p)), // FIXME: remove Scope from AST
+                    Rule::primary_group => Expr::Scope(self.parse_inner_expr(p)?), // FIXME: remove Scope from AST
                     Rule::reduce => {
                         let x = &mut p.into_inner();
-                        let input = self.next_expr(x);
+                        let input = self.next_expr(x)?;
                         let iter_var = x.next().unwrap().inner_string(1);
-                        let init = self.next_expr(x);
-                        let update = self.next_expr(x);
+                        let init = self.next_expr(x)?;
+                        let update = self.next_expr(x)?;
                         Expr::Reduce(input, iter_var, init, update)
                     }
                     Rule::string => {
@@ -284,8 +289,8 @@ impl JqPrattParser {
                         let mut parts = Vec::with_capacity(x.len());
                         for p in x {
                             match p.as_rule() {
-                                Rule::inner_str => parts.push(parse_inner_str(p)),
-                                Rule::str_interp => parts.push(self.parse_inner_expr(p)),
+                                Rule::inner_str => parts.push(parse_inner_str(p)?),
+                                Rule::str_interp => parts.push(self.parse_inner_expr(p)?),
                                 _ => unreachable!(),
                             }
                         }
@@ -299,16 +304,21 @@ impl JqPrattParser {
                     }
                     Rule::try_catch => {
                         let mut x = p.into_inner();
-                        let try_expr = self.parse_inner_expr(x.next().unwrap());
-                        let catch_expr = x.next().map(|catch| self.parse_inner_expr(catch));
+                        let try_expr = self.parse_inner_expr(x.next().unwrap())?;
+                        let catch_expr = x
+                            .next()
+                            .map(|catch| self.parse_inner_expr(catch))
+                            .transpose()?;
                         Expr::TryCatch(try_expr, catch_expr)
                     }
                     Rule::variable => Expr::Variable(p.inner_string(1)),
                     r => panic!("primary {r:?}"),
                 };
-                Ast::new(ast, span)
+                Ok(Ast::new(ast, span))
             })
             .map_infix(|lhs, op, rhs| {
+                let lhs = lhs?;
+                let rhs = rhs?;
                 let span = op.as_span();
                 let expr = match op.as_rule() {
                     Rule::add
@@ -341,14 +351,15 @@ impl JqPrattParser {
                         panic!("Missing pratt infix rule {r:?}")
                     }
                 };
-                Ast::new(expr, span)
+                Ok(Ast::new(expr, span))
             })
             .map_prefix(|op, rhs| {
                 let span = op.as_span();
+                let rhs = rhs?;
                 let ast = match op.as_rule() {
                     Rule::dbg_brk_pre => Expr::Breakpoint(rhs),
                     Rule::func_def => {
-                        let (name, args, body) = self.parse_func_def(op);
+                        let (name, args, body) = self.parse_func_def(op)?;
                         Expr::DefineFunc {
                             name,
                             args,
@@ -358,32 +369,35 @@ impl JqPrattParser {
                     }
                     r => panic!("Missing pratt prefix rule {r:?}"),
                 };
-                Ast::new(ast, span)
+                Ok(Ast::new(ast, span))
             })
             .map_postfix(|expr, op| {
                 let span = op.as_span();
+                let expr = expr?;
                 let ast = match op.as_rule() {
                     Rule::as_ => {
                         let inner = &mut op.into_inner();
-                        Expr::BindVars(expr, self.next_expr(inner), self.next_expr(inner))
+                        Expr::BindVars(expr, self.next_expr(inner)?, self.next_expr(inner)?)
                     }
                     Rule::dbg_brk_post => Expr::Breakpoint(expr),
-                    Rule::index => Expr::Index(expr, Some(self.parse_inner_expr(op))),
+                    Rule::index => Expr::Index(expr, Some(self.parse_inner_expr(op)?)),
                     Rule::iterate => Expr::Index(expr, None),
                     Rule::slice => {
                         let mut pairs = op.into_inner();
                         let a = pairs.next().unwrap();
-                        let start = (a.as_rule() != Rule::colon).then(|| {
+                        let start = if a.as_rule() != Rule::colon {
                             pairs.next(); // consume colon
-                            self.parse_inner_expr(a)
-                        });
-                        let end = pairs.next().map(|x| self.parse_inner_expr(x));
+                            Some(self.parse_inner_expr(a)?)
+                        } else {
+                            None
+                        };
+                        let end = pairs.next().map(|x| self.parse_inner_expr(x)).transpose()?;
                         Expr::Slice(expr, start, end)
                     }
                     Rule::try_postfix => Expr::TryCatch(expr, None),
                     r => panic!("Missing pratt postfix rule {r:?}"),
                 };
-                Ast::new(ast, span)
+                Ok(Ast::new(ast, span))
             })
             .parse(pairs)
     }
@@ -405,7 +419,7 @@ mod test_parser {
     // #[test]
     fn debugger() {
         let filter = ".a.b";
-        let pairs = parse_pratt(filter).unwrap();
+        let pairs = pratt_prog_token_pairs(filter).unwrap();
         print_pairs(pairs, 0);
         let _ast = parse_pratt_ast(filter).unwrap();
         println!("'{filter}' -> {_ast:?}");
@@ -623,10 +637,10 @@ mod test_parser {
     }
 
     fn parse_pratt_ast(filter: &str) -> Result<Ast> {
-        let pairs = parse_pratt(filter)?;
+        let pairs = pratt_prog_token_pairs(filter)?;
         let x = pairs.clone();
         match catch_unwind(|| pratt_parser(pairs)) {
-            Ok(a) => return Ok(a),
+            Ok(a) => return a,
             Err(panic_) => {
                 println!("{filter}");
                 println!("{x:#?}");
@@ -635,7 +649,7 @@ mod test_parser {
         };
     }
 
-    fn parse_pratt(filter: &str) -> Result<Pairs<Rule>> {
+    fn pratt_prog_token_pairs(filter: &str) -> Result<Pairs<Rule>> {
         let mut res = JqGrammar::parse(Rule::pratt_prog, filter)?;
         let pratt_prog = res.next().unwrap();
         let pratt_expr = pratt_prog.into_inner().next().unwrap();
