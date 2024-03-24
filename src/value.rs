@@ -237,6 +237,26 @@ impl From<String> for ArcStr {
     }
 }
 
+impl From<ArcStr> for ArcValue {
+    fn from(value: ArcStr) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&ArcStr> for ArcValue {
+    fn from(value: &ArcStr) -> Self {
+        Self::String(value.clone())
+    }
+}
+
+impl Deref for ArcStr {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_str()
+    }
+}
+
 impl ArcValue {
     pub fn as_array(&self) -> Option<&[Self]> {
         if let Self::Array(ArcArray(a)) = self {
