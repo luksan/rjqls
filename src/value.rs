@@ -222,7 +222,7 @@ impl ArcObj {
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct ArcStr(Arc<String>);
 impl Debug for ArcStr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

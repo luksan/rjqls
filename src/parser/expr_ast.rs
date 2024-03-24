@@ -7,7 +7,7 @@ use pest::Span;
 use tracing::{instrument, trace};
 
 use crate::parser::ast_jq_printer::ExprPrinter;
-use crate::value::Value;
+use crate::value::{ArcStr, ObjBuilder, Value};
 
 macro_rules! binop_str_map {
 
@@ -111,6 +111,58 @@ impl PartialEq for AstLoc {
 
 pub type ExprArray = Vec<Ast>;
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct BreakLabel {
+    name: ArcStr,
+    id: usize,
+}
+
+impl BreakLabel {
+    pub fn new(name: String, id: usize) -> Self {
+        Self {
+            name: name.into(),
+            id,
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &*self.name
+    }
+}
+
+impl PartialEq<str> for BreakLabel {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl Debug for BreakLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.debug_struct("BreakLabel")
+                .field("name", &self.name)
+                .field("id", &self.id)
+                .finish()
+        } else {
+            write!(f, "\"{}\"", &*self.name)
+        }
+    }
+}
+
+impl Display for BreakLabel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "$*label-{}", &*self.name)
+    }
+}
+
+impl From<BreakLabel> for Value {
+    fn from(value: BreakLabel) -> Self {
+        let mut o = ObjBuilder::new();
+        o.insert("__jq".to_string(), value.id.into());
+        o.into()
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Alternative(Ast, Ast),
@@ -118,7 +170,7 @@ pub enum Expr {
     Assign(Ast, Ast),
     BindVars(Ast, Ast, Ast),
     BinOp(BinOps, Ast, Ast),
-    Break(String),
+    Break(BreakLabel),
     Breakpoint(Ast),
     Call(String, ExprArray),
     Comma(Ast, Ast),
@@ -236,7 +288,7 @@ pub trait ExprVisitor<'e, R> {
         rhs.accept(self);
         self.default()
     }
-    fn visit_break(&self, name: &'e str) -> R {
+    fn visit_break(&self, name: &'e BreakLabel) -> R {
         self.default()
     }
     fn visit_breakpoint(&self, expr: &'e Ast) -> R {

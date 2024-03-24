@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 
-use crate::parser::expr_ast::{Ast, AstNode, BinOps, Expr, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, Expr, ExprVisitor, ObjectEntry};
 use crate::value::Value;
 
 pub struct ExprPrinter {
@@ -67,9 +67,9 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_break(&self, name: &'_ str) -> () {
+    fn visit_break(&self, name: &BreakLabel) -> () {
         self.puts("break $");
-        self.puts(name);
+        self.puts(name.as_str());
     }
 
     fn visit_breakpoint(&self, expr: &'_ Ast) -> () {

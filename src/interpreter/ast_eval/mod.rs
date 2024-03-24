@@ -1,13 +1,13 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::Generator;
-use crate::parser::expr_ast::{Ast, AstNode, BinOps, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, ExprVisitor, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
@@ -18,6 +18,8 @@ mod regex;
 pub enum EvalError {
     #[error("error: {0}")]
     Value(Value),
+    #[error("{0} is not defined")]
+    Break(BreakLabel),
     #[error("{0}")]
     Anyhow(#[from] anyhow::Error),
 }
@@ -25,7 +27,7 @@ pub enum EvalError {
 #[macro_export]
 macro_rules! bail {
     ($($args:tt),*) => {
-        return Err(EvalError::Anyhow(anyhow!($($args),*)))
+        return Err(EvalError::Anyhow(anyhow::anyhow!($($args),*)))
     };
 }
 
@@ -364,6 +366,9 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             .into())
     }
 
+    fn visit_break(&self, name: &'e BreakLabel) -> EvalVisitorRet<'e> {
+        self.default()
+    }
     fn visit_labeled_pipe(
         &self,
         label: &'e str,
@@ -488,6 +493,8 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             (Some(catch_expr), Err(e)) => {
                 let val = match e {
                     EvalError::Value(v) => v,
+                    // This is how jq does it, but maybe try/catch shouldn't affect break
+                    EvalError::Break(label) => label.into(),
                     EvalError::Anyhow(a) => a.to_string().into(),
                 };
                 catch_expr.accept(&self.clone_with_input(val))

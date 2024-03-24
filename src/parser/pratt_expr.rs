@@ -1,8 +1,11 @@
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
 use crate::parser::{PairExt, PRATT_PARSER, Rule};
-use crate::parser::expr_ast::{Ast, BinOps, Expr, ExprArray, ObjectEntry};
+use crate::parser::expr_ast::{Ast, BinOps, BreakLabel, Expr, ExprArray, ObjectEntry};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -35,39 +38,19 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::prefix(Rule::dbg_brk_pre) | Op::postfix(Rule::dbg_brk_post))
 }
 
+pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
+    let parser = JqPrattParser::new();
+    parser.pratt_parser(pairs)
+}
+
+pub fn parse_func_def(pair: Pair<'_, Rule>) -> (String, Vec<String>, Ast) {
+    let parser = JqPrattParser::new();
+    parser.parse_func_def(pair)
+}
+
 fn parse_literal(pairs: Pair<Rule>) -> Value {
     let literal = pairs.into_inner().next().unwrap();
     literal.as_str().parse().unwrap()
-}
-
-fn parse_object(pair: Pair<Rule>) -> Vec<ObjectEntry> {
-    let pairs = pair.into_inner();
-    if pairs.len() == 0 {
-        return vec![];
-    }
-    let mut ret = Vec::with_capacity(pairs.len());
-    for entry in pairs {
-        assert_eq!(entry.as_rule(), Rule::obj_pair);
-        let mut inner = entry.into_inner();
-        let key = inner.next().unwrap();
-        let value = inner.next().unwrap();
-        ret.push(ObjectEntry {
-            key: pratt_parser(key.into_inner()),
-            value: pratt_parser(value.into_inner()),
-        })
-    }
-    ret
-}
-
-fn vec_from_commas(mut ast: Ast) -> ExprArray {
-    let mut ret = Vec::new();
-    while let Expr::Comma(l, r) = *ast.expr {
-        ret.push(r);
-        ast = l;
-    }
-    ret.push(ast);
-    ret.reverse();
-    ret
 }
 
 fn parse_inner_str(pair: Pair<Rule>) -> Ast {
@@ -98,241 +81,312 @@ fn parse_inner_str(pair: Pair<Rule>) -> Ast {
     }
     Ast::new(Expr::Literal(ret.into()), span)
 }
-
-fn parse_if_expr(pair: Pair<Rule>) -> Expr {
-    let full_span = pair.as_span();
-    let mut pairs = pair.into_inner();
-    let cond = pratt_parser(pairs.next().unwrap().into_inner());
-    let if_true = pratt_parser(pairs.next().unwrap().into_inner());
-    let mut cond = vec![cond];
-    let mut branch = vec![if_true];
-    let mut else_ = Ast::new(Expr::Dot, full_span);
-    for p in pairs {
-        match p.as_rule() {
-            Rule::elif => {
-                let mut x = p.into_inner();
-                let c = pratt_parser(x.next().unwrap().into_inner());
-                let b = pratt_parser(x.next().unwrap().into_inner());
-                cond.push(c);
-                branch.push(b);
-            }
-            Rule::else_ => {
-                else_ = pratt_parser(p.into_inner());
-                break;
-            }
-            _ => unreachable!(),
-        }
+fn vec_from_commas(mut ast: Ast) -> ExprArray {
+    let mut ret = Vec::new();
+    while let Expr::Comma(l, r) = *ast.expr {
+        ret.push(r);
+        ast = l;
     }
-    branch.push(else_);
-    Expr::IfElse(cond, branch)
+    ret.push(ast);
+    ret.reverse();
+    ret
 }
 
-pub fn parse_func_def(p: Pair<Rule>) -> (String, Vec<String>, Ast) {
-    let mut pairs = p.into_inner();
-    let name = pairs.next().unwrap().as_str().to_owned();
-    let mut args = Vec::new();
-    let mut bound_args = Vec::new();
-    loop {
-        let pair = pairs.next().unwrap();
-        let span = pair.as_span();
-        match pair.as_rule() {
-            Rule::ident => {
-                let argument = pair.inner_string(0);
-                args.push(argument);
-            }
-            Rule::variable => {
-                let argument = pair.inner_string(1);
-                bound_args.push((argument.clone(), span));
-                args.push(argument);
-            }
-            Rule::pratt_expr => {
-                let mut filter = pratt_parser(pair.into_inner());
-                for (argument, span) in bound_args.into_iter().rev() {
-                    filter = Ast::new(
-                        Expr::BindVars(
-                            Ast::new(Expr::Call(argument.clone(), Default::default()), span),
-                            Ast::new(Expr::Variable(argument), span),
-                            filter,
-                        ),
-                        span,
-                    );
+struct JqPrattParser {
+    label_id_ctr: AtomicUsize,
+    label_stack: RefCell<Vec<BreakLabel>>,
+}
+
+impl JqPrattParser {
+    fn new() -> Self {
+        Self {
+            label_id_ctr: AtomicUsize::new(0),
+            label_stack: vec![].into(),
+        }
+    }
+
+    fn find_label(&self, mut pair: Pair<'_, Rule>) -> BreakLabel {
+        while pair.as_rule() != Rule::ident {
+            pair = pair
+                .into_inner()
+                .next()
+                .expect("Label should be Rule::ident")
+        }
+        let brw = self.label_stack.borrow();
+        let x = brw.iter().rfind(|&lbl| lbl == pair.as_str()).cloned();
+        drop(brw);
+        x.unwrap_or_else(|| self.new_label(pair)) // FIXME: return parsing error
+    }
+
+    fn new_label(&self, mut pair: Pair<'_, Rule>) -> BreakLabel {
+        while pair.as_rule() != Rule::ident {
+            pair = pair
+                .into_inner()
+                .next()
+                .expect("Label should be Rule::ident")
+        }
+        let id = self.label_id_ctr.fetch_add(1, Ordering::AcqRel);
+        let lbl = BreakLabel::new(pair.as_str().to_string(), id);
+        self.label_stack.borrow_mut().push(lbl.clone());
+        lbl
+    }
+
+    fn parse_object(&self, pair: Pair<Rule>) -> Vec<ObjectEntry> {
+        let pairs = pair.into_inner();
+        if pairs.len() == 0 {
+            return vec![];
+        }
+        let mut ret = Vec::with_capacity(pairs.len());
+        for entry in pairs {
+            assert_eq!(entry.as_rule(), Rule::obj_pair);
+            let mut inner = entry.into_inner();
+            let key = inner.next().unwrap();
+            let value = inner.next().unwrap();
+            ret.push(ObjectEntry {
+                key: self.pratt_parser(key.into_inner()),
+                value: self.pratt_parser(value.into_inner()),
+            })
+        }
+        ret
+    }
+
+    fn parse_if_expr(&self, pair: Pair<Rule>) -> Expr {
+        let full_span = pair.as_span();
+        let mut pairs = pair.into_inner();
+        let cond = self.pratt_parser(pairs.next().unwrap().into_inner());
+        let if_true = self.pratt_parser(pairs.next().unwrap().into_inner());
+        let mut cond = vec![cond];
+        let mut branch = vec![if_true];
+        let mut else_ = Ast::new(Expr::Dot, full_span);
+        for p in pairs {
+            match p.as_rule() {
+                Rule::elif => {
+                    let mut x = p.into_inner();
+                    let c = self.pratt_parser(x.next().unwrap().into_inner());
+                    let b = self.pratt_parser(x.next().unwrap().into_inner());
+                    cond.push(c);
+                    branch.push(b);
                 }
-                break (name, args, filter);
+                Rule::else_ => {
+                    else_ = self.pratt_parser(p.into_inner());
+                    break;
+                }
+                _ => unreachable!(),
             }
-            node => unreachable!("Unexpected node in parse_func_def: {node:?}"),
+        }
+        branch.push(else_);
+        Expr::IfElse(cond, branch)
+    }
+
+    pub fn parse_func_def(&self, p: Pair<Rule>) -> (String, Vec<String>, Ast) {
+        let mut pairs = p.into_inner();
+        let name = pairs.next().unwrap().as_str().to_owned();
+        let mut args = Vec::new();
+        let mut bound_args = Vec::new();
+        loop {
+            let pair = pairs.next().unwrap();
+            let span = pair.as_span();
+            match pair.as_rule() {
+                Rule::ident => {
+                    let argument = pair.inner_string(0);
+                    args.push(argument);
+                }
+                Rule::variable => {
+                    let argument = pair.inner_string(1);
+                    bound_args.push((argument.clone(), span));
+                    args.push(argument);
+                }
+                Rule::pratt_expr => {
+                    let mut filter = self.pratt_parser(pair.into_inner());
+                    for (argument, span) in bound_args.into_iter().rev() {
+                        filter = Ast::new(
+                            Expr::BindVars(
+                                Ast::new(Expr::Call(argument.clone(), Default::default()), span),
+                                Ast::new(Expr::Variable(argument), span),
+                                filter,
+                            ),
+                            span,
+                        );
+                    }
+                    break (name, args, filter);
+                }
+                node => unreachable!("Unexpected node in parse_func_def: {node:?}"),
+            }
         }
     }
-}
 
-pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
-    let pratt = get_pratt_parser();
-
-    fn parse_inner_expr(pair: Pair<Rule>) -> Ast {
+    fn parse_inner_expr(&self, pair: Pair<Rule>) -> Ast {
         let x = pair.into_inner();
         pratt_parser(x)
     }
-    fn next_expr(pairs: &mut Pairs<Rule>) -> Ast {
+
+    fn next_expr(&self, pairs: &mut Pairs<Rule>) -> Ast {
         pratt_parser(pairs.next().unwrap().into_inner())
     }
 
-    pratt
-        .map_primary(|p| {
-            let span = p.as_span();
-            let ast = match p.as_rule() {
-                Rule::arr => {
-                    let p = p.into_inner();
-                    let arr = if p.len() > 0 {
-                        vec_from_commas(pratt_parser(p))
-                    } else {
-                        vec![]
-                    };
-                    Expr::Array(arr)
-                }
-                Rule::break_ => Expr::Break(p.inner_string(2)),
-                Rule::call => {
-                    let mut x = p.into_inner();
-                    let ident = x.next().unwrap().inner_string(0);
-                    let mut params = Vec::new();
-                    for param in x {
-                        let param = parse_inner_expr(param);
-                        params.push(param);
+    fn pratt_parser<'a>(&self, pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Ast {
+        let pratt = get_pratt_parser();
+
+        pratt
+            .map_primary(|p| {
+                let span = p.as_span();
+                let ast = match p.as_rule() {
+                    Rule::arr => {
+                        let p = p.into_inner();
+                        let arr = if p.len() > 0 {
+                            vec_from_commas(self.pratt_parser(p))
+                        } else {
+                            vec![]
+                        };
+                        Expr::Array(arr)
                     }
-                    Expr::Call(ident, params)
-                }
-                Rule::dot_primary | Rule::idx_chain_dot | Rule::pipe_label => Expr::Dot,
-                Rule::foreach => {
-                    let full_span = p.as_span();
-                    let p = &mut p.into_inner();
-                    let expr = next_expr(p);
-                    let var = p.next().unwrap().inner_string(1);
-                    let init = next_expr(p);
-                    let update = next_expr(p);
-                    let extract = p
-                        .next()
-                        .map(parse_inner_expr)
-                        .unwrap_or_else(|| Ast::new(Expr::Dot, full_span));
-                    Expr::ForEach(expr, var, init, update, extract)
-                }
-                Rule::ident => Expr::Ident(p.inner_string(0)),
-                Rule::if_cond => parse_if_expr(p),
-                Rule::literal => Expr::Literal(parse_literal(p)),
-                Rule::obj => Expr::Object(parse_object(p)),
-                Rule::pratt_expr => return pratt_parser(p.into_inner()),
-                Rule::primary_group => Expr::Scope(parse_inner_expr(p)), // FIXME: remove Scope from AST
-                Rule::reduce => {
-                    let x = &mut p.into_inner();
-                    let input = next_expr(x);
-                    let iter_var = x.next().unwrap().inner_string(1);
-                    let init = next_expr(x);
-                    let update = next_expr(x);
-                    Expr::Reduce(input, iter_var, init, update)
-                }
-                Rule::string => {
-                    let x = p.into_inner();
-                    let mut parts = Vec::with_capacity(x.len());
-                    for p in x {
-                        match p.as_rule() {
-                            Rule::inner_str => parts.push(parse_inner_str(p)),
-                            Rule::str_interp => parts.push(parse_inner_expr(p)),
-                            _ => unreachable!(),
+                    Rule::break_ => Expr::Break(self.find_label(p)), // FIXME: return error from parsing
+                    Rule::call => {
+                        let mut x = p.into_inner();
+                        let ident = x.next().unwrap().inner_string(0);
+                        let mut params = Vec::new();
+                        for param in x {
+                            let param = self.parse_inner_expr(param);
+                            params.push(param);
+                        }
+                        Expr::Call(ident, params)
+                    }
+                    Rule::dot_primary | Rule::idx_chain_dot | Rule::pipe_label => Expr::Dot,
+                    Rule::foreach => {
+                        let full_span = p.as_span();
+                        let p = &mut p.into_inner();
+                        let expr = self.next_expr(p);
+                        let var = p.next().unwrap().inner_string(1);
+                        let init = self.next_expr(p);
+                        let update = self.next_expr(p);
+                        let extract = p
+                            .next()
+                            .map(|x| self.parse_inner_expr(x))
+                            .unwrap_or_else(|| Ast::new(Expr::Dot, full_span));
+                        Expr::ForEach(expr, var, init, update, extract)
+                    }
+                    Rule::ident => Expr::Ident(p.inner_string(0)),
+                    Rule::if_cond => self.parse_if_expr(p),
+                    Rule::literal => Expr::Literal(parse_literal(p)),
+                    Rule::obj => Expr::Object(self.parse_object(p)),
+                    Rule::pratt_expr => return self.pratt_parser(p.into_inner()),
+                    Rule::primary_group => Expr::Scope(self.parse_inner_expr(p)), // FIXME: remove Scope from AST
+                    Rule::reduce => {
+                        let x = &mut p.into_inner();
+                        let input = self.next_expr(x);
+                        let iter_var = x.next().unwrap().inner_string(1);
+                        let init = self.next_expr(x);
+                        let update = self.next_expr(x);
+                        Expr::Reduce(input, iter_var, init, update)
+                    }
+                    Rule::string => {
+                        let x = p.into_inner();
+                        let mut parts = Vec::with_capacity(x.len());
+                        for p in x {
+                            match p.as_rule() {
+                                Rule::inner_str => parts.push(parse_inner_str(p)),
+                                Rule::str_interp => parts.push(self.parse_inner_expr(p)),
+                                _ => unreachable!(),
+                            }
+                        }
+                        if parts.is_empty() {
+                            Expr::Literal("".into())
+                        } else if parts.len() == 1 && matches!(&*parts[0], Expr::Literal(_)) {
+                            *parts.pop().unwrap().expr
+                        } else {
+                            Expr::StringInterp(parts)
                         }
                     }
-                    if parts.is_empty() {
-                        Expr::Literal("".into())
-                    } else if parts.len() == 1 && matches!(&*parts[0], Expr::Literal(_)) {
-                        *parts.pop().unwrap().expr
-                    } else {
-                        Expr::StringInterp(parts)
+                    Rule::try_catch => {
+                        let mut x = p.into_inner();
+                        let try_expr = self.parse_inner_expr(x.next().unwrap());
+                        let catch_expr = x.next().map(|catch| self.parse_inner_expr(catch));
+                        Expr::TryCatch(try_expr, catch_expr)
                     }
-                }
-                Rule::try_catch => {
-                    let mut x = p.into_inner();
-                    let try_expr = parse_inner_expr(x.next().unwrap());
-                    let catch_expr = x.next().map(|catch| parse_inner_expr(catch));
-                    Expr::TryCatch(try_expr, catch_expr)
-                }
-                Rule::variable => Expr::Variable(p.inner_string(1)),
-                r => panic!("primary {r:?}"),
-            };
-            Ast::new(ast, span)
-        })
-        .map_infix(|lhs, op, rhs| {
-            let span = op.as_span();
-            let expr = match op.as_rule() {
-                Rule::add
-                | Rule::sub
-                | Rule::mul
-                | Rule::div
-                | Rule::and
-                | Rule::or
-                | Rule::ord
-                | Rule::eq
-                | Rule::neq => {
-                    let binop: BinOps = op.as_str().parse().unwrap();
-                    Expr::BinOp(binop, lhs, rhs)
-                }
-                Rule::alt => Expr::Alternative(lhs, rhs),
-                Rule::comma => Expr::Comma(lhs, rhs),
-                Rule::labeled_pipe => Expr::LabeledPipe(op.inner_string(2), lhs, rhs),
-                Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
-                Rule::assign => Expr::Assign(lhs, rhs),
-                Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
-                Rule::arith_assign => {
-                    let binop: BinOps = op.into_inner().next().unwrap().as_str().parse().unwrap();
-                    Expr::UpdateAssign(
-                        lhs,
-                        Ast::new(Expr::BinOp(binop, Ast::new(Expr::Dot, span), rhs), span),
-                    )
-                }
-                r => {
-                    panic!("Missing pratt infix rule {r:?}")
-                }
-            };
-            Ast::new(expr, span)
-        })
-        .map_prefix(|op, rhs| {
-            let span = op.as_span();
-            let ast = match op.as_rule() {
-                Rule::dbg_brk_pre => Expr::Breakpoint(rhs),
-                Rule::func_def => {
-                    let (name, args, body) = parse_func_def(op);
-                    Expr::DefineFunc {
-                        name,
-                        args,
-                        body,
-                        rhs,
+                    Rule::variable => Expr::Variable(p.inner_string(1)),
+                    r => panic!("primary {r:?}"),
+                };
+                Ast::new(ast, span)
+            })
+            .map_infix(|lhs, op, rhs| {
+                let span = op.as_span();
+                let expr = match op.as_rule() {
+                    Rule::add
+                    | Rule::sub
+                    | Rule::mul
+                    | Rule::div
+                    | Rule::and
+                    | Rule::or
+                    | Rule::ord
+                    | Rule::eq
+                    | Rule::neq => {
+                        let binop: BinOps = op.as_str().parse().unwrap();
+                        Expr::BinOp(binop, lhs, rhs)
                     }
-                }
-                r => panic!("Missing pratt prefix rule {r:?}"),
-            };
-            Ast::new(ast, span)
-        })
-        .map_postfix(|expr, op| {
-            let span = op.as_span();
-            let ast = match op.as_rule() {
-                Rule::as_ => {
-                    let inner = &mut op.into_inner();
-                    Expr::BindVars(expr, next_expr(inner), next_expr(inner))
-                }
-                Rule::dbg_brk_post => Expr::Breakpoint(expr),
-                Rule::index => Expr::Index(expr, Some(parse_inner_expr(op))),
-                Rule::iterate => Expr::Index(expr, None),
-                Rule::slice => {
-                    let mut pairs = op.into_inner();
-                    let a = pairs.next().unwrap();
-                    let start = (a.as_rule() != Rule::colon).then(|| {
-                        pairs.next(); // consume colon
-                        parse_inner_expr(a)
-                    });
-                    let end = pairs.next().map(parse_inner_expr);
-                    Expr::Slice(expr, start, end)
-                }
-                Rule::try_postfix => Expr::TryCatch(expr, None),
-                r => panic!("Missing pratt postfix rule {r:?}"),
-            };
-            Ast::new(ast, span)
-        })
-        .parse(pairs)
+                    Rule::alt => Expr::Alternative(lhs, rhs),
+                    Rule::comma => Expr::Comma(lhs, rhs),
+                    Rule::labeled_pipe => Expr::LabeledPipe(op.inner_string(2), lhs, rhs),
+                    Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
+                    Rule::assign => Expr::Assign(lhs, rhs),
+                    Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
+                    Rule::arith_assign => {
+                        let binop: BinOps =
+                            op.into_inner().next().unwrap().as_str().parse().unwrap();
+                        Expr::UpdateAssign(
+                            lhs,
+                            Ast::new(Expr::BinOp(binop, Ast::new(Expr::Dot, span), rhs), span),
+                        )
+                    }
+                    r => {
+                        panic!("Missing pratt infix rule {r:?}")
+                    }
+                };
+                Ast::new(expr, span)
+            })
+            .map_prefix(|op, rhs| {
+                let span = op.as_span();
+                let ast = match op.as_rule() {
+                    Rule::dbg_brk_pre => Expr::Breakpoint(rhs),
+                    Rule::func_def => {
+                        let (name, args, body) = self.parse_func_def(op);
+                        Expr::DefineFunc {
+                            name,
+                            args,
+                            body,
+                            rhs,
+                        }
+                    }
+                    r => panic!("Missing pratt prefix rule {r:?}"),
+                };
+                Ast::new(ast, span)
+            })
+            .map_postfix(|expr, op| {
+                let span = op.as_span();
+                let ast = match op.as_rule() {
+                    Rule::as_ => {
+                        let inner = &mut op.into_inner();
+                        Expr::BindVars(expr, self.next_expr(inner), self.next_expr(inner))
+                    }
+                    Rule::dbg_brk_post => Expr::Breakpoint(expr),
+                    Rule::index => Expr::Index(expr, Some(self.parse_inner_expr(op))),
+                    Rule::iterate => Expr::Index(expr, None),
+                    Rule::slice => {
+                        let mut pairs = op.into_inner();
+                        let a = pairs.next().unwrap();
+                        let start = (a.as_rule() != Rule::colon).then(|| {
+                            pairs.next(); // consume colon
+                            self.parse_inner_expr(a)
+                        });
+                        let end = pairs.next().map(|x| self.parse_inner_expr(x));
+                        Expr::Slice(expr, start, end)
+                    }
+                    Rule::try_postfix => Expr::TryCatch(expr, None),
+                    r => panic!("Missing pratt postfix rule {r:?}"),
+                };
+                Ast::new(ast, span)
+            })
+            .parse(pairs)
+    }
 }
 
 #[cfg(test)]
