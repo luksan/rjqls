@@ -15,6 +15,14 @@ impl<'f> ExprEval<'f> {
                 expr_val_from_value(sum)
             }
             ("empty", 0) => Ok(Default::default()),
+            ("error", 0) => Err(bail!(self.input.to_string())),
+            ("error", 1) => {
+                let mut arg = args[0].accept(self)?;
+                let Some(val) = arg.next() else {
+                    return Ok(Generator::empty());
+                };
+                Err(bail!(val?.to_string()))
+            }
             ("explode", 0) => {
                 let input = self
                     .input

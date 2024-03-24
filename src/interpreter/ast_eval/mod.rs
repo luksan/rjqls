@@ -114,7 +114,7 @@ impl<'f> ExprEval<'f> {
 
 pub type ExprValue<'e> = Generator<'e>;
 pub type ExprResult<'e> = Result<ExprValue<'e>>;
-pub type EvalVisitorRet<'e> = ExprResult<'e> ;
+pub type EvalVisitorRet<'e> = ExprResult<'e>;
 
 fn expr_val_from_value(val: Value) -> ExprResult<'static> {
     Ok(val.into())
@@ -458,6 +458,20 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         Ok(Generator::from_iter(ret))
     }
 
+    fn visit_try_catch(
+        &self,
+        try_expr: &'e AstNode,
+        catch_expr: Option<&'e AstNode>,
+    ) -> EvalVisitorRet<'e> {
+        let maybe = try_expr.accept(self);
+        match (catch_expr, maybe) {
+            (Some(catch_expr), Err(e)) => {
+                catch_expr.accept(&self.clone_with_input(e.to_string().into()))
+            }
+            (_, m) => m,
+        }
+    }
+
     fn visit_variable(&self, name: &str) -> EvalVisitorRet<'e> {
         self.get_variable(name)
     }
@@ -497,11 +511,18 @@ mod ast_eval_test {
 
     test_multiple_outputs![
         [empty, ".[] | empty", "[1,2,3]", []]
+        [error_empty, "try error(empty) catch 4", []]
     ];
 
     ast_eval_tests![
         [breakpoint, "§. | .", "1", "1"]
         [expr_eval, ".", "1", "1"]
+        [error_0, "try error catch .", "1", "1"]
+        [error_1, "try error(2) catch .", "null", "2"]
+        [error_obj, "try error({a: 1}) catch .a", "null", "1"]
+        [err_seq, "try error(1,2,3) catch .", "null", "1"]
+        [err_seq2, "[.[]|try if . > 3 then error(0.5) else . end catch .]", "[1,3,5,2]", "[1,2,0.5,2]"]
+
         [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
         [func_redef, r#"def a: 1; def b: a; def a: "function scope error"; b"#, "0", "1"]
         [func_def_nested, r#"def a(s): def b: s + .; b + 1; . | a(2)"#, "0", "3"]
