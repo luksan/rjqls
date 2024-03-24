@@ -1,6 +1,8 @@
+use crate::bail;
+
 use super::*;
 
-pub(super) fn floor(input: &Value) -> ExprResult<'static> {
+pub(super) fn floor(input: &Value) -> EvalVisitorRet<'static> {
     if input.as_u64().is_some() {
         expr_val_from_value(input.clone())
     } else if let Some(f) = input.as_f64() {

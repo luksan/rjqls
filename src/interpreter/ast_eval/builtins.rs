@@ -1,7 +1,13 @@
+use crate::bail;
+
 use super::*;
 
 impl<'f> ExprEval<'f> {
-    pub(super) fn get_builtin<'expr>(&self, name: &str, args: &'expr [AstNode]) -> ExprResult<'expr>
+    pub(super) fn get_builtin<'expr>(
+        &self,
+        name: &str,
+        args: &'expr [AstNode],
+    ) -> EvalVisitorRet<'expr>
     where
         'f: 'expr,
         'expr: 'f,
@@ -15,13 +21,13 @@ impl<'f> ExprEval<'f> {
                 expr_val_from_value(sum)
             }
             ("empty", 0) => Ok(Default::default()),
-            ("error", 0) => Err(bail!(self.input.to_string())),
+            ("error", 0) => Err(EvalError::Value(self.input.clone())),
             ("error", 1) => {
                 let mut arg = args[0].accept(self)?;
                 let Some(val) = arg.next() else {
                     return Ok(Generator::empty());
                 };
-                Err(bail!(val?.to_string()))
+                Err(EvalError::Value(val?))
             }
             ("explode", 0) => {
                 let input = self

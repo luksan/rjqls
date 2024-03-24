@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
@@ -13,6 +13,27 @@ use crate::value::{Map, Value, ValueOps};
 mod builtins;
 mod math;
 mod regex;
+
+#[derive(Debug, thiserror::Error)]
+pub enum EvalError {
+    #[error("error: {0}")]
+    Value(Value),
+    #[error("{0}")]
+    Anyhow(#[from] anyhow::Error),
+}
+
+#[macro_export]
+macro_rules! bail {
+    ($($args:tt),*) => {
+        return Err(EvalError::Anyhow(anyhow!($($args),*)))
+    };
+}
+
+impl From<Value> for EvalError {
+    fn from(value: Value) -> Self {
+        Self::Value(value.clone())
+    }
+}
 
 #[derive(Debug)]
 pub struct VarScope<'e> {
@@ -114,9 +135,9 @@ impl<'f> ExprEval<'f> {
 
 pub type ExprValue<'e> = Generator<'e>;
 pub type ExprResult<'e> = Result<ExprValue<'e>>;
-pub type EvalVisitorRet<'e> = ExprResult<'e>;
+pub type EvalVisitorRet<'e> = Result<Generator<'e>, EvalError>;
 
-fn expr_val_from_value(val: Value) -> ExprResult<'static> {
+fn expr_val_from_value(val: Value) -> EvalVisitorRet<'static> {
     Ok(val.into())
 }
 
@@ -147,7 +168,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             ret = ret.chain(v.into_iter());
         }
         // TODO: build array value with a closure
-        expr_val_from_value(Value::from(ret.collect::<Result<Vec<_>>>()?))
+        Ok(Value::from(ret.collect::<Result<Vec<_>>>()?).into())
     }
 
     fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> EvalVisitorRet<'e> {
@@ -211,7 +232,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             );
             bound_func.function.filter.accept(&eval)
         } else {
-            self.get_builtin(name, args)
+            Ok(self.get_builtin(name, args)?)
         }
     }
 
@@ -236,12 +257,11 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_dot(&self) -> EvalVisitorRet<'e> {
-        expr_val_from_value(self.input.clone())
+        Ok(self.input.clone().into())
     }
 
     fn visit_ident(&self, ident: &str) -> EvalVisitorRet<'e> {
-        // TODO: make Ident a kind of Literal, remove Ident from AST
-        expr_val_from_value(Value::from(ident))
+        Ok(Value::from(ident).into())
     }
 
     fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> EvalVisitorRet<'e> {
@@ -251,7 +271,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             mut ret: Generator<'g>,
             cond: &'g [AstNode],
             branches: &'g [AstNode],
-        ) -> Result<Generator<'g>> {
+        ) -> EvalVisitorRet<'g> {
             if cond.is_empty() {
                 ret = ret.chain(branches[0].accept(this)?);
                 return Ok(ret);
@@ -299,7 +319,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_literal(&self, lit: &Value) -> EvalVisitorRet<'e> {
-        expr_val_from_value(lit.clone())
+        Ok(lit.clone().into())
     }
 
     fn visit_object(&self, entries: &'e [ObjectEntry]) -> EvalVisitorRet<'e> {
@@ -388,7 +408,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
             update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
         }
-        expr_val_from_value(update_eval.input)
+        Ok(update_eval.input.into())
     }
 
     fn visit_scope(&self, inner: &'e AstNode) -> EvalVisitorRet<'e> {
@@ -466,14 +486,18 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let maybe = try_expr.accept(self);
         match (catch_expr, maybe) {
             (Some(catch_expr), Err(e)) => {
-                catch_expr.accept(&self.clone_with_input(e.to_string().into()))
+                let val = match e {
+                    EvalError::Value(v) => v,
+                    EvalError::Anyhow(a) => a.to_string().into(),
+                };
+                catch_expr.accept(&self.clone_with_input(val))
             }
             (_, m) => m,
         }
     }
 
     fn visit_variable(&self, name: &str) -> EvalVisitorRet<'e> {
-        self.get_variable(name)
+        Ok(self.get_variable(name)?)
     }
 }
 
@@ -521,7 +545,7 @@ mod ast_eval_test {
         [error_1, "try error(2) catch .", "null", "2"]
         [error_obj, "try error({a: 1}) catch .a", "null", "1"]
         [err_seq, "try error(1,2,3) catch .", "null", "1"]
-        [err_seq2, "[.[]|try if . > 3 then error(0.5) else . end catch .]", "[1,3,5,2]", "[1,2,0.5,2]"]
+        [err_seq2, "[.[]|try if . > 3 then error(0.5) else . end catch .]", "[1,3,5,2]", "[1,3,0.5,2]"]
 
         [func_def, r#"def a(s): . + s + .; .| a("3")"#, "\"2\"", "\"232\""]
         [func_redef, r#"def a: 1; def b: a; def a: "function scope error"; b"#, "0", "1"]

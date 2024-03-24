@@ -12,5 +12,6 @@ pest = "2.7.0"
 pest_derive = "2.7.0"
 serde_json = { version = "1.0.99", features = ["arbitrary_precision", "preserve_order"] }
 smallvec = { version = "1.11.0", features = ["const_generics", "serde"] }
+thiserror = "1.0.57"
 tracing = { version = "0.1.37", features = ["max_level_trace"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }

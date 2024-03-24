@@ -1,3 +1,4 @@
+use anyhow::bail;
 use onig::{Regex, RegexOptions, Syntax};
 
 use super::*;
