@@ -471,20 +471,33 @@ mod ast_eval_test {
 
     use super::*;
 
-    macro_rules! ast_eval_tests {
-        ($([$test_name:ident, $filter:literal, $input:literal, $expect:literal]$(,)?)+) => {
-            $(
-            #[test]
-            fn $test_name() {
-                let input = Value::from_str($input).unwrap();
-                let ret = eval_expr($filter, input).expect("eval_expr() error");
-                assert_eq!(ret.len(), 1, "Eval returned more than one result");
-                assert_eq!(ret[0], Value::from_str($expect).unwrap());
+    macro_rules! one_test {
+        ($test_name:ident, $filter:literal, $($input:literal,)? [$($expect:literal),*]) => {
+              #[test]
+              fn $test_name() {
+                  let input = if false {unreachable!()} $(else if true { Value::from_str($input).unwrap() })? else { Value::Null };
+                  let output = eval_expr($filter, input).expect("eval_expr() error");
+                  let expect: Vec<_> = [$($expect),*].into_iter().map(|v|Value::from_str(v).unwrap()).collect();
+                  assert_eq!(&output, &expect);
             }
-
-            )+
         };
     }
+
+    macro_rules! ast_eval_tests {
+        ($([$test_name:ident, $filter:literal,$input:literal, $expect_one:literal]$(,)?)+) => {
+            $( one_test!($test_name, $filter, $input, [$expect_one]); )+
+        };
+    }
+
+    macro_rules! test_multiple_outputs {
+        ($([$test_name:ident, $filter:literal, $($input:literal,)? [$($expect:literal),*]])+) => {
+            $( one_test!($test_name, $filter, $($input,)? [$($expect),*]); )+
+        };
+    }
+
+    test_multiple_outputs![
+        [empty, ".[] | empty", "[1,2,3]", []]
+    ];
 
     ast_eval_tests![
         [breakpoint, "§. | .", "1", "1"]
