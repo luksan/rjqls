@@ -367,11 +367,12 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_break(&self, name: &'e BreakLabel) -> EvalVisitorRet<'e> {
-        self.default()
+        Err(EvalError::Break(name.clone()))
     }
+
     fn visit_labeled_pipe(
         &self,
-        label: &'e str,
+        label: &'e BreakLabel,
         lhs: &'e AstNode,
         rhs: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
@@ -575,6 +576,16 @@ mod ast_eval_test {
     ];
 
     #[test]
+    fn test_undef_break() {
+        let filter = "label $b | try break $a catch . ";
+        let err = eval_expr(filter, ().into()).unwrap_err();
+        assert!(err
+            .root_cause()
+            .to_string()
+            .contains("$*label-a is not defined"))
+    }
+
+    #[test]
     fn test_scope_fail() {
         let filter = "(3 as $a | $a) | $a";
         let err = eval_expr(filter, ().into()).unwrap_err();
@@ -592,7 +603,7 @@ mod ast_eval_test {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
-        let ast = parse_program(filter).unwrap();
+        let ast = parse_program(filter)?;
         let ret = ast.accept(&eval)?.collect();
         ret // need to bind ret to variable, otherwise ast doesn't live long enough
     }

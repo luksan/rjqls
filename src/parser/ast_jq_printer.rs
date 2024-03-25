@@ -183,11 +183,11 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc('}');
     }
 
-    fn visit_labeled_pipe(&self, label: &'_ str, lhs: &'_ AstNode, rhs: &'_ AstNode) -> () {
+    fn visit_labeled_pipe(&self, label: &BreakLabel, lhs: &AstNode, rhs: &AstNode) -> () {
         lhs.accept(self);
         assert_eq!(Some('.'), self.r.borrow_mut().pop()); // remove the Dot
         self.puts("label $");
-        self.puts(label);
+        self.puts(label.as_str());
         self.putc('|');
         rhs.accept(self);
     }

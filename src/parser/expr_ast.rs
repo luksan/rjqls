@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::bail;
 use pest::Span;
@@ -117,11 +118,13 @@ pub struct BreakLabel {
     id: usize,
 }
 
+static LABEL_ID_CTR: AtomicUsize = AtomicUsize::new(0);
+
 impl BreakLabel {
-    pub fn new(name: String, id: usize) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             name: name.into(),
-            id,
+            id: LABEL_ID_CTR.fetch_add(1, Ordering::AcqRel),
         }
     }
 
@@ -186,7 +189,7 @@ pub enum Expr {
     // the first vec is conditions, the second is true branches, with else as the last element
     IfElse(ExprArray, ExprArray),
     Index(Ast, Option<Ast>), // [2]
-    LabeledPipe(String, Ast, Ast),
+    LabeledPipe(BreakLabel, Ast, Ast),
     Literal(Value),
     Object(Vec<ObjectEntry>),
     Pipe(Ast, Ast),
@@ -343,7 +346,7 @@ pub trait ExprVisitor<'e, R> {
         }
         self.default()
     }
-    fn visit_labeled_pipe(&self, label: &'e str, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
+    fn visit_labeled_pipe(&self, label: &'e BreakLabel, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use pest::error::ErrorVariant;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 
@@ -39,16 +39,19 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::prefix(Rule::dbg_brk_pre) | Op::postfix(Rule::dbg_brk_post))
 }
 
-pub type ParseResult = Result<Ast>;
+pub type ParseError = pest::error::Error<Rule>;
+pub type ParseResult = Result<Ast, ParseError>;
 
 pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Result<Ast> {
     let parser = JqPrattParser::new();
-    parser.pratt_parser(pairs)
+    parser.pratt_parser(pairs).context("pratt parsing error")
 }
 
 pub fn parse_func_def(pair: Pair<'_, Rule>) -> Result<(String, Vec<String>, Ast)> {
     let parser = JqPrattParser::new();
-    parser.parse_func_def(pair)
+    parser
+        .parse_func_def(pair)
+        .context("function parsing error")
 }
 
 fn parse_literal(pairs: Pair<Rule>) -> Value {
@@ -97,45 +100,47 @@ fn vec_from_commas(mut ast: Ast) -> ExprArray {
 }
 
 struct JqPrattParser {
-    label_id_ctr: AtomicUsize,
     label_stack: RefCell<Vec<BreakLabel>>,
 }
 
 impl JqPrattParser {
     fn new() -> Self {
         Self {
-            label_id_ctr: AtomicUsize::new(0),
             label_stack: vec![].into(),
         }
     }
 
-    fn find_label(&self, mut pair: Pair<'_, Rule>) -> BreakLabel {
+    fn find_label<'p>(&self, mut pair: Pair<'p, Rule>) -> Result<BreakLabel, Pair<'p, Rule>> {
         while pair.as_rule() != Rule::ident {
             pair = pair
                 .into_inner()
                 .next()
                 .expect("Label should be Rule::ident")
         }
-        let brw = self.label_stack.borrow();
-        let x = brw.iter().rfind(|&lbl| lbl == pair.as_str()).cloned();
-        drop(brw);
-        x.unwrap_or_else(|| self.new_label(pair)) // FIXME: return parsing error
+        self.label_stack
+            .borrow()
+            .iter()
+            .rfind(|&lbl| lbl == pair.as_str())
+            .cloned()
+            .ok_or(pair)
     }
 
-    fn new_label(&self, mut pair: Pair<'_, Rule>) -> BreakLabel {
+    fn new_label(&self, mut pair: Pair<'_, Rule>) {
         while pair.as_rule() != Rule::ident {
             pair = pair
                 .into_inner()
                 .next()
                 .expect("Label should be Rule::ident")
         }
-        let id = self.label_id_ctr.fetch_add(1, Ordering::AcqRel);
-        let lbl = BreakLabel::new(pair.as_str().to_string(), id);
-        self.label_stack.borrow_mut().push(lbl.clone());
-        lbl
+        let lbl = BreakLabel::new(pair.as_str().to_string());
+        self.label_stack.borrow_mut().push(lbl);
     }
 
-    fn parse_object(&self, pair: Pair<Rule>) -> Result<Vec<ObjectEntry>> {
+    fn latest_label(&self) -> Option<BreakLabel> {
+        self.label_stack.borrow().last().cloned()
+    }
+
+    fn parse_object(&self, pair: Pair<Rule>) -> Result<Vec<ObjectEntry>, ParseError> {
         let pairs = pair.into_inner();
         if pairs.len() == 0 {
             return Ok(vec![]);
@@ -154,7 +159,7 @@ impl JqPrattParser {
         Ok(ret)
     }
 
-    fn parse_if_expr(&self, pair: Pair<Rule>) -> Result<Expr> {
+    fn parse_if_expr(&self, pair: Pair<Rule>) -> Result<Expr, ParseError> {
         let full_span = pair.as_span();
         let mut pairs = pair.into_inner();
         let cond = self.pratt_parser(pairs.next().unwrap().into_inner())?;
@@ -182,7 +187,7 @@ impl JqPrattParser {
         Ok(Expr::IfElse(cond, branch))
     }
 
-    pub fn parse_func_def(&self, p: Pair<Rule>) -> Result<(String, Vec<String>, Ast)> {
+    pub fn parse_func_def(&self, p: Pair<Rule>) -> Result<(String, Vec<String>, Ast), ParseError> {
         let mut pairs = p.into_inner();
         let name = pairs.next().unwrap().as_str().to_owned();
         let mut args = Vec::new();
@@ -221,11 +226,11 @@ impl JqPrattParser {
 
     fn parse_inner_expr(&self, pair: Pair<Rule>) -> ParseResult {
         let x = pair.into_inner();
-        pratt_parser(x)
+        self.pratt_parser(x)
     }
 
     fn next_expr(&self, pairs: &mut Pairs<Rule>) -> ParseResult {
-        pratt_parser(pairs.next().unwrap().into_inner())
+        self.pratt_parser(pairs.next().unwrap().into_inner())
     }
 
     fn pratt_parser<'a>(&self, pairs: impl Iterator<Item = Pair<'a, Rule>>) -> ParseResult {
@@ -244,7 +249,14 @@ impl JqPrattParser {
                         };
                         Expr::Array(arr)
                     }
-                    Rule::break_ => Expr::Break(self.find_label(p)), // FIXME: return error from parsing
+                    Rule::break_ => Expr::Break(self.find_label(p).map_err(|pair| {
+                        ParseError::new_from_span(
+                            ErrorVariant::CustomError {
+                                message: format!("$*label-{} is not defined", pair.as_str()),
+                            },
+                            span,
+                        )
+                    })?),
                     Rule::call => {
                         let mut x = p.into_inner();
                         let ident = x.next().unwrap().inner_string(0);
@@ -255,7 +267,11 @@ impl JqPrattParser {
                         }
                         Expr::Call(ident, params)
                     }
-                    Rule::dot_primary | Rule::idx_chain_dot | Rule::pipe_label => Expr::Dot,
+                    Rule::dot_primary | Rule::idx_chain_dot => Expr::Dot,
+                    Rule::pipe_label => {
+                        self.new_label(p);
+                        Expr::Dot
+                    }
                     Rule::foreach => {
                         let full_span = p.as_span();
                         let p = &mut p.into_inner();
@@ -335,7 +351,11 @@ impl JqPrattParser {
                     }
                     Rule::alt => Expr::Alternative(lhs, rhs),
                     Rule::comma => Expr::Comma(lhs, rhs),
-                    Rule::labeled_pipe => Expr::LabeledPipe(op.inner_string(2), lhs, rhs),
+                    Rule::labeled_pipe => Expr::LabeledPipe(
+                        self.latest_label().unwrap(), // the label was created in the previous token
+                        lhs,
+                        rhs,
+                    ),
                     Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
                     Rule::assign => Expr::Assign(lhs, rhs),
                     Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
@@ -528,17 +548,22 @@ mod test_parser {
                 Ok(a) => a,
                 Err(e) => panic!("{e:?}"),
             };
-            let str_rep = format!("{ast}");
-            if str_rep != ref_flt {
+            let ast_jq_printed = format!("{ast}");
+            if ast_jq_printed != ref_flt {
                 println!("{ast:#?}");
             }
             assert_eq!(
-                &str_rep, ref_flt,
+                &ast_jq_printed, ref_flt,
                 "AST fmt didn't match with reference (right)"
             );
             // Check that the AST str rep round-trips
-            let ast2 = parse_pratt_ast(&str_rep).unwrap();
-            assert_eq!(ast, ast2, "AST fmt didn't round-trip");
+            let ast2 = parse_pratt_ast(&ast_jq_printed).unwrap();
+            // compare the normal Debug fmt instead of the ASTs directly, since the break label id's will differ
+            assert_eq!(
+                format!("{ast2:?}"),
+                format!("{ast:?}"),
+                "AST fmt didn't round-trip"
+            );
         }
     }
 
