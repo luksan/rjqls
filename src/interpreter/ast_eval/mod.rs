@@ -143,6 +143,16 @@ fn expr_val_from_value(val: Value) -> EvalVisitorRet<'static> {
     Ok(val.into())
 }
 
+macro_rules! next_or_empty {
+    ($e:expr) => {
+        if let Some(v) = $e.next() {
+            v
+        } else {
+            return Ok(Generator::empty());
+        }
+    };
+}
+
 impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     fn default(&self) -> EvalVisitorRet<'e> {
         panic!("Missing func impl in ExprVisitor for ExprEval.");
@@ -329,7 +339,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             let (key, value) = (&e.key, &e.value);
             let mut key_gen = key.accept(self)?;
             let val = value.accept(self)?;
-            let key = key_gen.next().unwrap();
+            let key = next_or_empty!(key_gen);
             let mut ret = vec![key];
             ret.extend(val);
             Ok(ret.into())
@@ -338,13 +348,13 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut objects: Vec<Map> = vec![Map::default()];
         for e in entries {
             let mut keyvals = visit_obj_entry(e)?;
-            let key = keyvals.next().unwrap()?;
+            let key = next_or_empty!(keyvals)?;
             let key = key.as_str().context("Object key must be a string")?;
             let mut values = keyvals;
 
             let obj_cnt = objects.len();
 
-            let mut val = values.next().unwrap()?;
+            let mut val = next_or_empty!(values)?;
             let mut obj_slice = &mut objects[0..];
             loop {
                 for o in obj_slice {
@@ -544,6 +554,8 @@ mod ast_eval_test {
     test_multiple_outputs![
         [empty, ".[] | empty", "[1,2,3]", []]
         [error_empty, "try error(empty) catch 4", []]
+        [obj_empty_key, r#"{a: 3, (empty): 3}"#, []]
+        [obj_empty_val, "{a: 3, b: empty}", []]
     ];
 
     ast_eval_tests![
