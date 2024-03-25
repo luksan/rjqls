@@ -392,7 +392,11 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut rhs_eval = self.clone();
         for value in lhs {
             rhs_eval.input = value?;
-            ret = ret.chain(rhs.accept(&rhs_eval)?);
+            match rhs.accept(&rhs_eval) {
+                Ok(gen) => ret = ret.chain(gen),
+                Err(EvalError::Break(lbl)) if &lbl == label => continue,
+                err => return err,
+            }
         }
         Ok(ret)
     }
