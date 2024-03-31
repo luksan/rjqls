@@ -246,6 +246,12 @@ impl AstInterpreter {
 
     pub fn eval_input(&mut self, input: Value) -> Result<Vec<Value>> {
         let var_scope = self.variables.clone();
+        let func_scope = self.build_func_scope();
+        let eval = ExprEval::new(func_scope.clone(), input.clone(), var_scope);
+        eval.visit(&self.root_filter)
+    }
+
+    fn build_func_scope(&self) -> Arc<FuncScope> {
         let mut func_scope = FuncScope::default();
         for f in self.builtins.iter() {
             func_scope.push(
@@ -256,11 +262,7 @@ impl AstInterpreter {
                 &VarScope::new(),
             );
         }
-        let func_scope = Arc::new(func_scope);
-        let eval = ExprEval::new(func_scope.clone(), input.clone(), var_scope);
-        let v = self.root_filter.accept(&eval)?;
-
-        v.collect()
+        Arc::new(func_scope)
     }
 
     fn load_builtins() -> Result<JqModule> {

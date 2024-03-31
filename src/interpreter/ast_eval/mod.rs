@@ -95,6 +95,15 @@ impl<'f> ExprEval<'f> {
         }
     }
 
+    pub fn visit(&self, ast: &'f AstNode) -> Result<Vec<Value>> {
+        ast.accept(self)?.collect()
+    }
+
+    pub fn visit_with_input(&self, ast: &'f AstNode, input: Value) -> Result<Vec<Value>> {
+        let x = self.clone_with_input(input);
+        x.visit(ast)
+    }
+
     fn clone_with_input(&self, input: Value) -> Self {
         Self {
             input,
@@ -620,7 +629,6 @@ mod ast_eval_test {
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
         let ast = parse_program(filter)?;
-        let ret = ast.accept(&eval)?.collect();
-        ret // need to bind ret to variable, otherwise ast doesn't live long enough
+        eval.visit(&ast)
     }
 }
