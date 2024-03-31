@@ -69,6 +69,9 @@ pub fn parse_program(prog: &str) -> Result<Ast> {
 pub struct JqModule {
     pub(crate) functions: Vec<OwnedFunc>,
 }
+
+/// This is used to own the Ast for builtins and other included functions
+/// that are not present in the main AST
 #[derive(Debug)]
 pub struct OwnedFunc {
     pub name: String,

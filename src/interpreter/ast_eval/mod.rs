@@ -578,7 +578,7 @@ mod ast_eval_test {
         [func_complex_scope, r#"def a:"first "; def b(x):a + x; def a: "second"; b(a)"#, "0", "\"first second\""]
         [func_var_arg_name, r#"[ def a(a; $a): a, $a, def a: "inner"; a, $a; a("arg"; "var") ] "#,"null", r#"["var", "var", "inner", "var"]"#]
         [if_else, r#"[ if .[] then "hej" elif .[] == false then "hmm" else 4 end ]"#, "[1,false,3]", r#"["hej", 4, "hmm", 4, "hej"]"# ]
-        [include, r#"include "tests/test_include.jq"; func_a"#, "null", "1"]
+        [include, r#"include "tests/test_include.jq"; func_b"#, "null", "2"]
         [var_bind, ". as [$a, $b] | $a + $b", "[1,2,3]", "3"]
         [var_bind_term, "[.[]|.+1 as $v|.]", "[1,4,5,3]", "[2,8,10,6]"] // https://github.com/jqlang/jq/issues/2446
         [var_scope, r#"[. as $a|$a|def a: $a | .+" func" as $a|$a; "out" as $a| a,., $a]"#, "\"in\"", r#"["in func", "in", "out"]"#]
