@@ -6,8 +6,9 @@ escape = { "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
     | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
 }
 
-program = _{ SOI ~ (include_directive)* ~ pratt_expr ~ EOI }
+program = _{ SOI ~ includes ~ pratt_expr ~ EOI }
 
+includes = _{ (include_directive | module_directive)* }
 include_directive = {"include"  ~ "\"" ~ inner_str ~ "\"" ~ pratt_expr? ~ ";"}
 module_directive = {"module" ~ pratt_expr ~ ";"}
 // func_def is a prefix in pratt_expr
@@ -17,7 +18,9 @@ func_def = {
     ~ ":" ~ pratt_expr ~ ";"
 }
 
-jq_module = { SOI ~ (func_def | module_directive)* ~ EOI }
+// Only includes and func defs are allowed in a module, but parse an optional expr at the end to
+// enable a nicer error message
+jq_module = _{ SOI ~ includes ~ func_def* ~ pratt_expr? ~ EOI }
 path_string = ${"\"" ~ inner_str ~ "\""}
 
 included_src = _{ SOI ~ (pratt_expr | func_def*) ~ eoi }

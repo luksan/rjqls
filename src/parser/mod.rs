@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use anyhow::Context;
 use anyhow::Result;
+use anyhow::{bail, Context};
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::PrattParser;
 use pest::Parser;
@@ -88,11 +88,14 @@ pub struct OwnedFunc {
 pub fn parse_module(code: &str, src_id: SrcId) -> Result<JqModule> {
     let mut pairs = JqGrammar::parse(Rule::jq_module, code)?;
     let mut functions = include_and_import(&mut pairs)?;
-    for p in pairs.next().unwrap().into_inner() {
+    for p in pairs {
         match p.as_rule() {
             Rule::func_def => {
                 let (name, args, filter) = parse_func_def(p, src_id)?;
                 functions.push(OwnedFunc { name, args, filter });
+            }
+            Rule::pratt_expr => {
+                bail!("library should only have function definitions, not a main expression")
             }
             Rule::EOI => break,
             _ => unreachable!("Missing rule '{p:?}' in module parser"),
