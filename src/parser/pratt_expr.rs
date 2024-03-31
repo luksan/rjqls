@@ -4,9 +4,10 @@ use anyhow::{Context, Result};
 use pest::error::ErrorVariant;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
+use pest::Span;
 
-use crate::parser::{PairExt, PRATT_PARSER, Rule};
-use crate::parser::expr_ast::{Ast, BinOps, BreakLabel, Expr, ExprArray, ObjectEntry};
+use crate::parser::expr_ast::{Ast, BinOps, BreakLabel, Expr, ExprArray, ObjectEntry, SrcId};
+use crate::parser::{PairExt, Rule, PRATT_PARSER};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -43,12 +44,12 @@ pub type ParseError = pest::error::Error<Rule>;
 pub type ParseResult = Result<Ast, ParseError>;
 
 pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Result<Ast> {
-    let parser = JqPrattParser::new();
+    let parser = JqPrattParser::new(SrcId::new());
     parser.pratt_parser(pairs).context("pratt parsing error")
 }
 
 pub fn parse_func_def(pair: Pair<'_, Rule>) -> Result<(String, Vec<String>, Ast)> {
-    let parser = JqPrattParser::new();
+    let parser = JqPrattParser::new(SrcId::new());
     parser
         .parse_func_def(pair)
         .context("function parsing error")
@@ -57,35 +58,6 @@ pub fn parse_func_def(pair: Pair<'_, Rule>) -> Result<(String, Vec<String>, Ast)
 fn parse_literal(pairs: Pair<Rule>) -> Value {
     let literal = pairs.into_inner().next().unwrap();
     literal.as_str().parse().unwrap()
-}
-
-fn parse_inner_str(pair: Pair<Rule>) -> ParseResult {
-    let span = pair.as_span();
-    let pairs = pair.into_inner();
-    let mut ret = String::with_capacity(pairs.len());
-
-    for p in pairs {
-        match p.as_rule() {
-            Rule::char => ret.push(p.as_str().chars().next().unwrap()),
-            Rule::escape => ret.push(match p.as_str().strip_prefix('\\').unwrap() {
-                "\"" => '"',
-                "\\" => '\\',
-                "/" => '/',
-                "b" => '\u{8}',
-                "f" => '\u{c}',
-                "n" => '\n',
-                "r" => '\r',
-                "t" => '\t',
-                codept => codept
-                    .strip_prefix('u')
-                    .and_then(|s| u32::from_str_radix(s, 16).ok())
-                    .and_then(char::from_u32) // FIXME: this should probably be decode_utf16
-                    .unwrap_or(char::REPLACEMENT_CHARACTER),
-            }),
-            _ => unreachable!(),
-        }
-    }
-    Ok(Ast::new(Expr::Literal(ret.into()), span))
 }
 
 fn vec_from_commas(mut ast: Ast) -> ExprArray {
@@ -101,13 +73,19 @@ fn vec_from_commas(mut ast: Ast) -> ExprArray {
 
 struct JqPrattParser {
     label_stack: RefCell<Vec<BreakLabel>>,
+    src_id: SrcId,
 }
 
 impl JqPrattParser {
-    fn new() -> Self {
+    fn new(src_id: SrcId) -> Self {
         Self {
             label_stack: vec![].into(),
+            src_id,
         }
+    }
+
+    fn mk_ast(&self, expr: Expr, span: Span<'_>) -> Ast {
+        Ast::new(expr, span, self.src_id)
     }
 
     fn find_label<'p>(&self, mut pair: Pair<'p, Rule>) -> Result<BreakLabel, Pair<'p, Rule>> {
@@ -166,7 +144,7 @@ impl JqPrattParser {
         let if_true = self.pratt_parser(pairs.next().unwrap().into_inner())?;
         let mut cond = vec![cond];
         let mut branch = vec![if_true];
-        let mut else_ = Ast::new(Expr::Dot, full_span);
+        let mut else_ = self.mk_ast(Expr::Dot, full_span);
         for p in pairs {
             match p.as_rule() {
                 Rule::elif => {
@@ -187,7 +165,7 @@ impl JqPrattParser {
         Ok(Expr::IfElse(cond, branch))
     }
 
-    pub fn parse_func_def(&self, p: Pair<Rule>) -> Result<(String, Vec<String>, Ast), ParseError> {
+    fn parse_func_def(&self, p: Pair<Rule>) -> Result<(String, Vec<String>, Ast), ParseError> {
         let mut pairs = p.into_inner();
         let name = pairs.next().unwrap().as_str().to_owned();
         let mut args = Vec::new();
@@ -208,10 +186,10 @@ impl JqPrattParser {
                 Rule::pratt_expr => {
                     let mut filter = self.pratt_parser(pair.into_inner())?;
                     for (argument, span) in bound_args.into_iter().rev() {
-                        filter = Ast::new(
+                        filter = self.mk_ast(
                             Expr::BindVars(
-                                Ast::new(Expr::Call(argument.clone(), Default::default()), span),
-                                Ast::new(Expr::Variable(argument), span),
+                                self.mk_ast(Expr::Call(argument.clone(), Default::default()), span),
+                                self.mk_ast(Expr::Variable(argument), span),
                                 filter,
                             ),
                             span,
@@ -283,7 +261,7 @@ impl JqPrattParser {
                             .next()
                             .map(|x| self.parse_inner_expr(x))
                             .transpose()?
-                            .unwrap_or_else(|| Ast::new(Expr::Dot, full_span));
+                            .unwrap_or_else(|| self.mk_ast(Expr::Dot, full_span));
                         Expr::ForEach(expr, var, init, update, extract)
                     }
                     Rule::ident => Expr::Ident(p.inner_string(0)),
@@ -305,7 +283,7 @@ impl JqPrattParser {
                         let mut parts = Vec::with_capacity(x.len());
                         for p in x {
                             match p.as_rule() {
-                                Rule::inner_str => parts.push(parse_inner_str(p)?),
+                                Rule::inner_str => parts.push(self.parse_inner_str(p)?),
                                 Rule::str_interp => parts.push(self.parse_inner_expr(p)?),
                                 _ => unreachable!(),
                             }
@@ -330,7 +308,7 @@ impl JqPrattParser {
                     Rule::variable => Expr::Variable(p.inner_string(1)),
                     r => panic!("primary {r:?}"),
                 };
-                Ok(Ast::new(ast, span))
+                Ok(self.mk_ast(ast, span))
             })
             .map_infix(|lhs, op, rhs| {
                 let lhs = lhs?;
@@ -364,14 +342,17 @@ impl JqPrattParser {
                             op.into_inner().next().unwrap().as_str().parse().unwrap();
                         Expr::UpdateAssign(
                             lhs,
-                            Ast::new(Expr::BinOp(binop, Ast::new(Expr::Dot, span), rhs), span),
+                            self.mk_ast(
+                                Expr::BinOp(binop, self.mk_ast(Expr::Dot, span), rhs),
+                                span,
+                            ),
                         )
                     }
                     r => {
                         panic!("Missing pratt infix rule {r:?}")
                     }
                 };
-                Ok(Ast::new(expr, span))
+                Ok(self.mk_ast(expr, span))
             })
             .map_prefix(|op, rhs| {
                 let span = op.as_span();
@@ -389,7 +370,7 @@ impl JqPrattParser {
                     }
                     r => panic!("Missing pratt prefix rule {r:?}"),
                 };
-                Ok(Ast::new(ast, span))
+                Ok(self.mk_ast(ast, span))
             })
             .map_postfix(|expr, op| {
                 let span = op.as_span();
@@ -417,9 +398,38 @@ impl JqPrattParser {
                     Rule::try_postfix => Expr::TryCatch(expr, None),
                     r => panic!("Missing pratt postfix rule {r:?}"),
                 };
-                Ok(Ast::new(ast, span))
+                Ok(self.mk_ast(ast, span))
             })
             .parse(pairs)
+    }
+
+    fn parse_inner_str(&self, pair: Pair<Rule>) -> ParseResult {
+        let span = pair.as_span();
+        let pairs = pair.into_inner();
+        let mut ret = String::with_capacity(pairs.len());
+
+        for p in pairs {
+            match p.as_rule() {
+                Rule::char => ret.push(p.as_str().chars().next().unwrap()),
+                Rule::escape => ret.push(match p.as_str().strip_prefix('\\').unwrap() {
+                    "\"" => '"',
+                    "\\" => '\\',
+                    "/" => '/',
+                    "b" => '\u{8}',
+                    "f" => '\u{c}',
+                    "n" => '\n',
+                    "r" => '\r',
+                    "t" => '\t',
+                    codept => codept
+                        .strip_prefix('u')
+                        .and_then(|s| u32::from_str_radix(s, 16).ok())
+                        .and_then(char::from_u32) // FIXME: this should probably be decode_utf16
+                        .unwrap_or(char::REPLACEMENT_CHARACTER),
+                }),
+                _ => unreachable!(),
+            }
+        }
+        Ok(self.mk_ast(Expr::Literal(ret.into()), span))
     }
 }
 

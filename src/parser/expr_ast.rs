@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 
 use anyhow::bail;
 use pest::Span;
@@ -66,16 +66,28 @@ impl From<Span<'_>> for SpanLoc {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SrcId(u16);
+static SRC_ID_CTR: AtomicU16 = AtomicU16::new(1);
+
+impl SrcId {
+    pub fn new() -> Self {
+        Self(SRC_ID_CTR.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
 pub struct AstLoc {
     pub expr: Box<Expr>,
     pub span: SpanLoc,
+    pub src_id: SrcId,
 }
 
 impl AstLoc {
-    pub fn new(expr: Expr, span: Span<'_>) -> Self {
+    pub fn new(expr: Expr, span: Span<'_>, src_id: SrcId) -> Self {
         Self {
             expr: Box::new(expr),
             span: span.into(),
+            src_id,
         }
     }
 }
