@@ -43,13 +43,13 @@ fn build_pratt_parser() -> PrattParser<Rule> {
 pub type ParseError = pest::error::Error<Rule>;
 pub type ParseResult = Result<Ast, ParseError>;
 
-pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Result<Ast> {
-    let parser = JqPrattParser::new(SrcId::new());
+pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>, src_id: SrcId) -> Result<Ast> {
+    let parser = JqPrattParser::new(src_id);
     parser.pratt_parser(pairs).context("pratt parsing error")
 }
 
-pub fn parse_func_def(pair: Pair<'_, Rule>) -> Result<(String, Vec<String>, Ast)> {
-    let parser = JqPrattParser::new(SrcId::new());
+pub fn parse_func_def(pair: Pair<'_, Rule>, src_id: SrcId) -> Result<(String, Vec<String>, Ast)> {
+    let parser = JqPrattParser::new(src_id);
     parser
         .parse_func_def(pair)
         .context("function parsing error")
@@ -674,7 +674,7 @@ mod test_parser {
     fn parse_pratt_ast(filter: &str) -> Result<Ast> {
         let pairs = pratt_prog_token_pairs(filter)?;
         let x = pairs.clone();
-        match catch_unwind(|| pratt_parser(pairs)) {
+        match catch_unwind(|| pratt_parser(pairs, SrcId::new())) {
             Ok(a) => return a,
             Err(panic_) => {
                 println!("{filter}");

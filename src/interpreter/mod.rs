@@ -7,8 +7,8 @@ use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
 
 use crate::parser;
-use crate::parser::{JqModule, OwnedFunc, parse_module};
-use crate::parser::expr_ast::{Ast, AstNode};
+use crate::parser::expr_ast::{Ast, AstNode, SrcId};
+use crate::parser::{parse_module, JqModule, OwnedFunc};
 use crate::value::{ArcValue, Value};
 
 pub mod ast_eval;
@@ -268,7 +268,7 @@ impl AstInterpreter {
     fn load_builtins() -> Result<JqModule> {
         let code = include_str!("../builtins/builtin.jq");
         // let code = include_str!("../builtins/rjqls_builtins.jq");
-        parse_module(code)
+        parse_module(code, SrcId::new())
     }
 }
 

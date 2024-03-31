@@ -90,6 +90,22 @@ impl AstLoc {
             src_id,
         }
     }
+
+    pub fn prepend_func(self, name: String, args: Vec<String>, body: Self) -> Self {
+        let span = body.span.clone();
+        let src_id = body.src_id;
+        let expr = Expr::DefineFunc {
+            name,
+            args,
+            body,
+            rhs: self,
+        };
+        Self {
+            expr: Box::new(expr),
+            span,
+            src_id,
+        }
+    }
 }
 
 impl Deref for AstLoc {
