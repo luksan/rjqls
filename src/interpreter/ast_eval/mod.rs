@@ -207,6 +207,18 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut ret = Vec::new(); // TODO generator
         for l in lhs {
             let l = &l?;
+            match op {
+                // Short-circuit and/or
+                BinOps::And if !l.is_truthy() => {
+                    ret.push(Ok(false.into()));
+                    continue;
+                }
+                BinOps::Or if l.is_truthy() => {
+                    ret.push(Ok(true.into()));
+                    continue;
+                }
+                _ => {} // check rhs
+            }
             let rhs = rhs.accept(self)?;
             for r in rhs {
                 let r = &r?;
@@ -227,8 +239,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                     BinOps::Greater => cmp!(>),
                     BinOps::GreaterEq => cmp!(>=),
 
-                    BinOps::And => Ok(Value::from(l.is_truthy() && r.is_truthy())),
-                    BinOps::Or => Ok(Value::from(l.is_truthy() || r.is_truthy())),
+                    BinOps::And | BinOps::Or => Ok(r.is_truthy().into()),
 
                     op => unimplemented!("{op:?}"),
                 };
@@ -429,10 +440,8 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         update: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
         let input = input_expr.accept(self)?;
-        let Some(init) = init.accept(self)?.next() else {
-            return Ok(Generator::empty());
-        };
-        let mut update_eval = self.clone_with_input(init?);
+        let init = next_or_empty!(init.accept(self)?)?;
+        let mut update_eval = self.clone_with_input(init);
         for v in input {
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
             update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
@@ -570,6 +579,8 @@ mod ast_eval_test {
         [error_empty, "try error(empty) catch 4", []]
         [obj_empty_key, r#"{a: 3, (empty): 3}"#, []]
         [obj_empty_val, "{a: 3, b: empty}", []]
+        [or_short_ckt, "true or empty",["true"]]
+        [and_short_ckt, "(1, false, 2) and (1,2)", ["true","true","false","true","true"]]
     ];
 
     ast_eval_tests![
