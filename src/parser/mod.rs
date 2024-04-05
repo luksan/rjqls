@@ -2,8 +2,8 @@ use std::sync::OnceLock;
 
 use anyhow::{bail, Result};
 use pest::iterators::{Pair, Pairs};
-use pest::pratt_parser::PrattParser;
 use pest::Parser;
+use pest::pratt_parser::PrattParser;
 
 use crate::parser::expr_ast::{Ast, SrcId};
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
@@ -59,7 +59,7 @@ fn include_and_import(
         let mut include = pairs.next().unwrap().into_inner();
         let path = include.next().unwrap().as_str();
         let _metadata = include.next();
-        let (src, src_id) = src_reader.read_jq(&path, &"FIXME")?;
+        let (src, src_id) = src_reader.read_jq(&path)?;
         let mut x = parse_module(&src, src_id, src_reader)?;
         includes.append(&mut x.functions);
     }
@@ -100,8 +100,9 @@ pub fn parse_module(code: &str, src_id: SrcId, src_reader: &mut dyn SrcRead) -> 
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::src_reader::test_src_reader;
+
+    use super::*;
 
     #[test]
     fn test_include() {

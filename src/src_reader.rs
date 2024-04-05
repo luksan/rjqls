@@ -1,26 +1,20 @@
-use crate::parser::expr_ast::SrcId;
-use crate::value::Value;
-use anyhow::{bail, Context, Result};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+
+use crate::parser::expr_ast::SrcId;
+use crate::value::Value;
 
 pub trait SrcRead {
     fn builtins(&self) -> (Cow<'static, str>, SrcId);
 
-    fn read_jq(
-        &mut self,
-        relpath: &dyn AsRef<Path>,
-        curr_path: &dyn AsRef<Path>,
-    ) -> Result<(Cow<'static, str>, SrcId)> {
+    fn read_jq(&mut self, relpath: &dyn AsRef<Path>) -> Result<(Cow<'static, str>, SrcId)> {
         let path = relpath.as_ref().with_extension("jq");
         self.read_src(path)
     }
 
-    fn read_json(
-        &mut self,
-        relpath: &dyn AsRef<Path>,
-        curr_path: &dyn AsRef<Path>,
-    ) -> Result<Value> {
+    fn read_json(&mut self, _relpath: &dyn AsRef<Path>) -> Result<Value> {
         unimplemented!()
     }
 
