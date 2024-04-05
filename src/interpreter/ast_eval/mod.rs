@@ -537,6 +537,7 @@ mod ast_eval_test {
     use std::str::FromStr;
 
     use crate::parser::parse_program;
+    use crate::src_reader::test_src_reader;
 
     use super::*;
 
@@ -628,7 +629,7 @@ mod ast_eval_test {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
-        let ast = parse_program(filter)?;
+        let ast = parse_program(filter, &mut test_src_reader())?;
         eval.visit(&ast)
     }
 }

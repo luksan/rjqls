@@ -1,14 +1,13 @@
-use std::path::Path;
 use std::sync::OnceLock;
 
-use anyhow::Result;
-use anyhow::{bail, Context};
+use anyhow::{bail, Result};
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::PrattParser;
 use pest::Parser;
 
 use crate::parser::expr_ast::{Ast, SrcId};
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
+use crate::src_reader::SrcRead;
 
 mod ast_jq_printer;
 pub mod expr_ast;
@@ -33,18 +32,10 @@ impl PairExt for Pair<'_, Rule> {
     }
 }
 
-pub fn read_module_text(rel_path_str: impl AsRef<Path>) -> Result<String> {
-    let mut path = rel_path_str.as_ref().to_owned();
-    path.set_extension("jq");
-    // TODO: implement search paths
-
-    std::fs::read_to_string(&path).with_context(|| format!("Failed to read file {path:?}"))
-}
-
-pub fn parse_program(prog: &str) -> Result<Ast> {
+pub fn parse_program(prog: &str, src_reader: &mut dyn SrcRead) -> Result<Ast> {
     let mut program_pairs = JqGrammar::parse(Rule::program, prog)?;
 
-    let includes = include_and_import(&mut program_pairs)?;
+    let includes = include_and_import(&mut program_pairs, src_reader)?;
     let main_prog_tokens = program_pairs.next().unwrap().into_inner();
 
     // Prepend included functions to the ast
@@ -55,7 +46,10 @@ pub fn parse_program(prog: &str) -> Result<Ast> {
     Ok(main)
 }
 
-fn include_and_import(pairs: &mut Pairs<Rule>) -> Result<Vec<OwnedFunc>> {
+fn include_and_import(
+    pairs: &mut Pairs<Rule>,
+    src_reader: &mut dyn SrcRead,
+) -> Result<Vec<OwnedFunc>> {
     let mut includes = vec![];
     while matches!(
         pairs.peek().map(|p| p.as_rule()),
@@ -65,8 +59,8 @@ fn include_and_import(pairs: &mut Pairs<Rule>) -> Result<Vec<OwnedFunc>> {
         let mut include = pairs.next().unwrap().into_inner();
         let path = include.next().unwrap().as_str();
         let _metadata = include.next();
-        let src = read_module_text(path)?;
-        let mut x = parse_module(&src, SrcId::new())?;
+        let (src, src_id) = src_reader.read_jq(&path, &"FIXME")?;
+        let mut x = parse_module(&src, src_id, src_reader)?;
         includes.append(&mut x.functions);
     }
     Ok(includes)
@@ -85,9 +79,9 @@ pub struct OwnedFunc {
     pub filter: Ast,
 }
 
-pub fn parse_module(code: &str, src_id: SrcId) -> Result<JqModule> {
+pub fn parse_module(code: &str, src_id: SrcId, src_reader: &mut dyn SrcRead) -> Result<JqModule> {
     let mut pairs = JqGrammar::parse(Rule::jq_module, code)?;
-    let mut functions = include_and_import(&mut pairs)?;
+    let mut functions = include_and_import(&mut pairs, src_reader)?;
     for p in pairs {
         match p.as_rule() {
             Rule::func_def => {
@@ -107,10 +101,15 @@ pub fn parse_module(code: &str, src_id: SrcId) -> Result<JqModule> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::src_reader::test_src_reader;
 
     #[test]
     fn test_include() {
-        parse_program(r#"include "tests/test_include.jq"; ."#).unwrap();
+        parse_program(
+            r#"include "tests/test_include.jq"; ."#,
+            &mut test_src_reader(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -125,7 +124,7 @@ mod test {
     #[test]
     fn parse_builtins() {
         let code = std::fs::read_to_string("src/builtins/builtin.jq").unwrap();
-        parse_module(&code, SrcId::new()).unwrap();
+        parse_module(&code, SrcId::new(), &mut test_src_reader()).unwrap();
     }
 
     #[test]

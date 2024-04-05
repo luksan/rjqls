@@ -133,6 +133,7 @@ mod test_builtins {
     use std::str::FromStr;
 
     use crate::parser::parse_program;
+    use crate::src_reader::test_src_reader;
 
     use super::*;
 
@@ -151,7 +152,7 @@ mod test_builtins {
         let scope = Arc::new(FuncScope::default());
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
-        let ast = parse_program(filter).unwrap();
+        let ast = parse_program(filter, &mut test_src_reader()).unwrap();
         let rvals = ast.accept(&eval)?.collect();
         rvals
     }

@@ -7,8 +7,9 @@ use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
 
 use crate::parser;
-use crate::parser::expr_ast::{Ast, AstNode, SrcId};
-use crate::parser::{parse_module, JqModule, OwnedFunc};
+use crate::parser::expr_ast::{Ast, AstNode};
+use crate::parser::{parse_module, OwnedFunc};
+use crate::src_reader::{SrcRead, SrcReader};
 use crate::value::{ArcValue, Value};
 
 pub mod ast_eval;
@@ -225,16 +226,20 @@ pub struct AstInterpreter {
     builtins: Vec<OwnedFunc>,
     root_filter: Ast,
     variables: Arc<VarScope<'static>>,
+    src_reader: SrcReader,
 }
 
 impl AstInterpreter {
     pub fn new(code: &str) -> Result<Self> {
-        let builtin = Self::load_builtins()?;
-        let root_filter = parser::parse_program(code)?;
+        let mut src_reader = SrcReader::new();
+        let (builtin_src, src_id) = src_reader.builtins();
+        let builtin = parse_module(builtin_src.as_ref(), src_id, &mut src_reader)?;
+        let root_filter = parser::parse_program(code, &mut src_reader)?;
         let this = Self {
             builtins: builtin.functions,
             root_filter,
             variables: VarScope::new(),
+            src_reader,
         };
         Ok(this)
     }
@@ -263,12 +268,6 @@ impl AstInterpreter {
             );
         }
         Arc::new(func_scope)
-    }
-
-    fn load_builtins() -> Result<JqModule> {
-        let code = include_str!("../builtins/builtin.jq");
-        // let code = include_str!("../builtins/rjqls_builtins.jq");
-        parse_module(code, SrcId::new())
     }
 }
 
