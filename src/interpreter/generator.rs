@@ -4,6 +4,7 @@ use std::iter;
 use anyhow::Result;
 
 use crate::interpreter::ast_eval::EvalError;
+use crate::parser::expr_ast::BreakLabel;
 use crate::value::Value;
 
 pub struct Generator<'e> {
@@ -18,6 +19,12 @@ impl<'e> Generator<'e> {
         }
     }
 
+    pub fn from_break(label: BreakLabel) -> Self {
+        Self {
+            src: Box::new(iter::once(Err(EvalError::Break(label)))),
+        }
+    }
+
     pub fn empty() -> Generator<'static> {
         Generator {
             src: Box::new(iter::empty()),
@@ -26,6 +33,23 @@ impl<'e> Generator<'e> {
 
     #[must_use]
     pub fn chain(self, next: Self) -> Self {
+        Self {
+            src: Box::new(self.src.chain(next.src)),
+        }
+    }
+
+    #[must_use]
+    pub fn chain_break(self, next: Self, label: BreakLabel) -> Self {
+        Self {
+            src: Box::new(self.src.chain(next.src.take_while(
+                move |res| !matches!(res, Err(EvalError::Break(lbl)) if &label == lbl),
+            ))),
+        }
+    }
+
+    #[must_use]
+    pub fn chain_res(self, next: Result<Self, EvalError>) -> Self {
+        let next = next.unwrap_or_else(|err| Self::from_iter(iter::once(Err(err))));
         Self {
             src: Box::new(self.src.chain(next.src)),
         }

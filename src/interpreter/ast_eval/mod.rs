@@ -269,8 +269,8 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
 
     fn visit_comma(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> EvalVisitorRet<'e> {
         let lhs = lhs.accept(self)?;
-        let rhs = rhs.accept(self)?;
-        Ok(lhs.chain(rhs))
+        let rhs = rhs.accept(self);
+        Ok(lhs.chain_res(rhs))
     }
 
     fn visit_define_function(
@@ -397,7 +397,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_break(&self, name: &'e BreakLabel) -> EvalVisitorRet<'e> {
-        Err(EvalError::Break(name.clone()))
+        Ok(Generator::from_break(name.clone()))
     }
 
     fn visit_labeled_pipe(
@@ -406,15 +406,14 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         lhs: &'e AstNode,
         rhs: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
-        // TODO: implement "break"
         let lhs = lhs.accept(self)?;
         let mut ret = Generator::empty();
         let mut rhs_eval = self.clone();
         for value in lhs {
             rhs_eval.input = value?;
             match rhs.accept(&rhs_eval) {
-                Ok(gen) => ret = ret.chain(gen),
-                Err(EvalError::Break(lbl)) if &lbl == label => continue,
+                Ok(gen) => ret = ret.chain_break(gen, label.clone()),
+                Err(EvalError::Break(lbl)) if &lbl == label => break,
                 err => return err,
             }
         }
@@ -581,6 +580,8 @@ mod ast_eval_test {
         [obj_empty_val, "{a: 3, b: empty}", []]
         [or_short_ckt, "true or empty",["true"]]
         [and_short_ckt, "(1, false, 2) and (1,2)", ["true","true","false","true","true"]]
+
+        [label_first, "label $out | 1 | ., break $out", ["1"]]
     ];
 
     ast_eval_tests![
@@ -642,5 +643,19 @@ mod ast_eval_test {
         let eval = ExprEval::new(scope, input, var_scope);
         let ast = parse_program(filter, &mut test_src_reader())?;
         eval.visit(&ast)
+    }
+
+    #[test]
+    fn test_error_propagation() {
+        let filter = "true, error(true), false,error(false)";
+        let scope = Arc::new(FuncScope::default());
+        let var_scope = VarScope::new();
+        let eval = ExprEval::new(scope, Value::Null, var_scope);
+        let ast = parse_program(filter, &mut test_src_reader()).unwrap();
+        let res = ast.accept(&eval).unwrap().collect::<Vec<_>>();
+        assert!(res[0].is_ok());
+        assert!(res[1].is_err());
+        assert!(res[2].is_ok());
+        assert!(res[3].is_err());
     }
 }

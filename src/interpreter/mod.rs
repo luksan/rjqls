@@ -7,8 +7,8 @@ use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
 
 use crate::parser;
+use crate::parser::{OwnedFunc, parse_module};
 use crate::parser::expr_ast::{Ast, AstNode};
-use crate::parser::{parse_module, OwnedFunc};
 use crate::src_reader::{SrcRead, SrcReader};
 use crate::value::{ArcValue, Value};
 
@@ -320,6 +320,8 @@ mod test {
         }
         check_value!(
             [func_prefix, ". | def x: 3; . | x", "null", ["3"]]
+            [isempty, "isempty(1)", ["false"]]
+            [isempty_2, "isempty(empty)", ["true"]]
             [func_var_arg, r#"def f($a): $a+1; f(1)"#, ["2"]]
             [str_interp,r#""x\(1,2)y\(3,4)z\("a"+"b")" "#, ["\"x1y3zab\"", "\"x2y3zab\"", "\"x1y4zab\"", "\"x2y4zab\""]]
             [subs,r#"sub("\\s+"; "")"#, "\"   asd asd \"", ["\"asd asd \""]]
