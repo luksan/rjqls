@@ -59,6 +59,7 @@ impl<'f> ExprEval<'f> {
                 ))
             }
             ("length", 0) => expr_val_from_value(self.input.length()?),
+            ("not", 0) => expr_val_from_value((!self.input.is_truthy()).into()),
 
             // Regex
             ("_match_impl", 3) => {
