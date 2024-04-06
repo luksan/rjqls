@@ -71,12 +71,13 @@ impl<'f> ExprEval<'f> {
                     for mods in mods.accept(self)? {
                         let mods = mods?;
                         for testmode in testmode.accept(self)? {
-                            let caps = regex::f_match(&self.input, &regex, &mods, &testmode?);
+                            let caps = regex::f_match(&self.input, &regex, &mods, &testmode?)
+                                .map_err(|e| e.into());
                             ret.push(caps);
                         }
                     }
                 }
-                Ok(Generator::from_iter(ret.into_iter()))
+                Ok(Generator::from_iter(ret))
             }
             ("split", 1) => {
                 let input = self
@@ -153,7 +154,6 @@ mod test_builtins {
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, input, var_scope);
         let ast = parse_program(filter, &mut test_src_reader()).unwrap();
-        let rvals = ast.accept(&eval)?.collect();
-        rvals
+        eval.visit(&ast)
     }
 }

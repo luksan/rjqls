@@ -96,7 +96,7 @@ impl<'f> ExprEval<'f> {
     }
 
     pub fn visit(&self, ast: &'f AstNode) -> Result<Vec<Value>> {
-        ast.accept(self)?.collect()
+        Ok(ast.accept(self)?.collect::<CollectVecResult>()?)
     }
 
     pub fn visit_with_input(&self, ast: &'f AstNode, input: Value) -> Result<Vec<Value>> {
@@ -135,18 +135,17 @@ impl<'f> ExprEval<'f> {
         Some(func.bind(&func_scope, args, scope, var_scope))
     }
 
-    fn get_variable(&self, name: &str) -> ExprResult<'static> {
-        Ok(self
-            .var_scope
+    fn get_variable(&self, name: &str) -> Result<Value> {
+        self.var_scope
             .get_variable(name)
             .with_context(|| format!("Variable '{name}' is not defined."))
-            .into())
     }
 }
 
 pub type ExprValue<'e> = Generator<'e>;
-pub type ExprResult<'e> = Result<ExprValue<'e>>;
+pub type ExprResult<'e> = Result<ExprValue<'e>, EvalError>;
 pub type EvalVisitorRet<'e> = Result<Generator<'e>, EvalError>;
+type CollectVecResult = Result<Vec<Value>, EvalError>;
 
 fn expr_val_from_value(val: Value) -> EvalVisitorRet<'static> {
     Ok(val.into())
@@ -179,7 +178,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         if ret.is_empty() {
             return defaults.accept(self);
         }
-        Ok(Generator::from_iter(ret.into_iter()))
+        Ok(Generator::from_iter(ret))
     }
 
     fn visit_array(&self, elements: &'e [AstNode]) -> EvalVisitorRet<'e> {
@@ -189,7 +188,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             ret = ret.chain(v.into_iter());
         }
         // TODO: build array value with a closure
-        Ok(Value::from(ret.collect::<Result<Vec<_>>>()?).into())
+        Ok(Value::from(ret.collect::<CollectVecResult>()?).into())
     }
 
     fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> EvalVisitorRet<'e> {
@@ -243,7 +242,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
 
                     op => unimplemented!("{op:?}"),
                 };
-                ret.push(r);
+                ret.push(r.map_err(|e| e.into()));
             }
         }
         Ok(Generator::from_iter(ret))
@@ -343,7 +342,8 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 let i = &i?;
                 let val = v
                     .index(i)
-                    .with_context(|| format!("Failed to index {v} with {i}."));
+                    .with_context(|| format!("Failed to index {v} with {i}."))
+                    .map_err(|e| e.into());
                 ret.push(val);
             }
         }
@@ -477,17 +477,17 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                     expr_val_from_value(Value::from(v.length()?))?
                 };
                 for e in end {
-                    ret.push(v.slice(&s, &e?));
+                    ret.push(v.slice(&s, &e?).map_err(|e| e.into()));
                 }
             }
         }
-        Ok(Generator::from_iter(ret.into_iter()))
+        Ok(Generator::from_iter(ret))
     }
 
     fn visit_string_interp(&self, parts: &'e [AstNode]) -> EvalVisitorRet<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
-            let values = part.accept(self)?.collect::<Result<Vec<_>>>()?;
+            let values = part.accept(self)?.collect::<CollectVecResult>()?;
             if values.is_empty() {
                 return Ok(Generator::empty());
             };
@@ -537,7 +537,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_variable(&self, name: &str) -> EvalVisitorRet<'e> {
-        Ok(self.get_variable(name)?)
+        Ok(self.get_variable(name)?.into())
     }
 }
 

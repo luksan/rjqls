@@ -3,12 +3,13 @@ use std::iter;
 
 use anyhow::Result;
 
+use crate::interpreter::ast_eval::EvalError;
 use crate::value::Value;
 
 pub struct Generator<'e> {
     src: Box<dyn Iterator<Item = ResVal> + 'e>,
 }
-pub type ResVal = Result<Value>;
+pub type ResVal = Result<Value, EvalError>;
 
 impl<'e> Generator<'e> {
     pub fn from_iter(i: impl IntoIterator<Item = ResVal> + 'e) -> Generator<'e> {
@@ -16,11 +17,13 @@ impl<'e> Generator<'e> {
             src: Box::new(i.into_iter()),
         }
     }
+
     pub fn empty() -> Generator<'static> {
         Generator {
             src: Box::new(iter::empty()),
         }
     }
+
     #[must_use]
     pub fn chain(self, next: Self) -> Self {
         Self {
