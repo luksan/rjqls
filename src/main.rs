@@ -122,8 +122,12 @@ fn read_value_from_stdin() -> Result<Option<Value>> {
         if res == 0 {
             return ret;
         }
+        if input.trim().is_empty() {
+            continue;
+        }
         ret = serde_json::from_str(&input)
             .map(|json_val: JsonValue| Some(ArcValue::from(json_val)))
+            .with_context(|| format!("Failed to parse json '{input}'"))
             .context("JSON value parse error");
         if ret.is_ok() {
             return ret;
