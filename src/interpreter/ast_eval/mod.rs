@@ -7,7 +7,9 @@ use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::Generator;
-use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{
+    Ast, AstNode, BinOps, BreakLabel, ExprVisitor, FuncDef, ObjectEntry,
+};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
@@ -273,17 +275,13 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         Ok(lhs.chain_res(rhs))
     }
 
-    fn visit_define_function(
-        &self,
-        name: &str,
-        args: &'e [String],
-        body: &'e AstNode,
-        rhs: &'e AstNode,
-    ) -> EvalVisitorRet<'e> {
-        let mut scope = self.func_scope.new_inner();
+    fn visit_func_scope(&self, funcs: &'e [FuncDef], rhs: &'e AstNode) -> EvalVisitorRet<'e> {
+        let mut scope = self.func_scope.clone();
         let var_scope = &self.var_scope;
-        scope.push(name.to_owned(), args.into(), body, None, var_scope);
-        let eval = self.clone_with_func_scope(Arc::new(scope));
+        for f in funcs {
+            scope = scope.push_inner(f, None, var_scope);
+        }
+        let eval = self.clone_with_func_scope(scope);
         rhs.accept(&eval)
     }
 

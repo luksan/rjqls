@@ -1,6 +1,8 @@
 use std::cell::{Cell, RefCell};
 
-use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, Expr, ExprVisitor, ObjectEntry};
+use crate::parser::expr_ast::{
+    Ast, AstNode, BinOps, BreakLabel, Expr, ExprVisitor, FuncDef, ObjectEntry,
+};
 use crate::value::Value;
 
 pub struct ExprPrinter {
@@ -98,27 +100,23 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_define_function(
-        &self,
-        name: &str,
-        args: &[String],
-        body: &AstNode,
-        rhs: &AstNode,
-    ) -> () {
-        self.puts("def ");
-        self.puts(name);
-        if !args.is_empty() {
-            self.putc('(');
-            self.puts(args[0].as_str());
-            args[1..].iter().for_each(|a| {
-                self.puts(", ");
-                self.puts(a.as_str());
-            });
-            self.putc(')');
+    fn visit_func_scope(&self, funcs: &[FuncDef], rhs: &AstNode) {
+        for FuncDef { name, args, body } in funcs {
+            self.puts("def ");
+            self.puts(name);
+            if !args.is_empty() {
+                self.putc('(');
+                self.puts(args[0].as_str());
+                args[1..].iter().for_each(|a| {
+                    self.puts("; ");
+                    self.puts(a.as_str());
+                });
+                self.putc(')');
+            }
+            self.puts(": ");
+            body.accept(self);
+            self.puts("; ");
         }
-        self.puts(": ");
-        body.accept(self);
-        self.puts("; ");
         rhs.accept(self)
     }
 

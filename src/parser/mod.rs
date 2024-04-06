@@ -2,10 +2,10 @@ use std::sync::OnceLock;
 
 use anyhow::{bail, Result};
 use pest::iterators::{Pair, Pairs};
-use pest::Parser;
 use pest::pratt_parser::PrattParser;
+use pest::Parser;
 
-use crate::parser::expr_ast::{Ast, SrcId};
+use crate::parser::expr_ast::{Ast, FuncDef, SrcId};
 use crate::parser::pratt_expr::{parse_func_def, pratt_parser};
 use crate::src_reader::SrcRead;
 
@@ -40,16 +40,15 @@ pub fn parse_program(prog: &str, src_reader: &mut dyn SrcRead) -> Result<Ast> {
 
     // Prepend included functions to the ast
     let mut main = pratt_parser(main_prog_tokens, SrcId::new())?;
-    for f in includes.into_iter().rev() {
-        main = main.prepend_func(f.name, f.args, f.filter)
-    }
+    main = main.prepend_funcs(includes);
+
     Ok(main)
 }
 
 fn include_and_import(
     pairs: &mut Pairs<Rule>,
     src_reader: &mut dyn SrcRead,
-) -> Result<Vec<OwnedFunc>> {
+) -> Result<Vec<FuncDef>> {
     let mut includes = vec![];
     while matches!(
         pairs.peek().map(|p| p.as_rule()),
@@ -67,7 +66,7 @@ fn include_and_import(
 }
 
 pub struct JqModule {
-    pub(crate) functions: Vec<OwnedFunc>,
+    pub(crate) functions: Vec<FuncDef>,
 }
 
 /// This is used to own the Ast for builtins and other included functions
@@ -84,10 +83,7 @@ pub fn parse_module(code: &str, src_id: SrcId, src_reader: &mut dyn SrcRead) -> 
     let mut functions = include_and_import(&mut pairs, src_reader)?;
     for p in pairs {
         match p.as_rule() {
-            Rule::func_def => {
-                let (name, args, filter) = parse_func_def(p, src_id)?;
-                functions.push(OwnedFunc { name, args, filter });
-            }
+            Rule::func_def => functions.push(parse_func_def(p, src_id)?),
             Rule::pratt_expr => {
                 bail!("library should only have function definitions, not a main expression")
             }

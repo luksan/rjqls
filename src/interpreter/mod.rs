@@ -7,8 +7,8 @@ use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
 
 use crate::parser;
-use crate::parser::{OwnedFunc, parse_module};
-use crate::parser::expr_ast::{Ast, AstNode};
+use crate::parser::expr_ast::{Ast, AstNode, FuncDef};
+use crate::parser::parse_module;
 use crate::src_reader::{SrcRead, SrcReader};
 use crate::value::{ArcValue, Value};
 
@@ -27,7 +27,7 @@ mod func_scope {
 
     use crate::interpreter::{Arity, FuncDefArgs, Function};
     use crate::interpreter::ast_eval::VarScope;
-    use crate::parser::expr_ast::AstNode;
+    use crate::parser::expr_ast::{AstNode, FuncDef};
 
     #[derive(Default)]
     pub struct FuncScope<'f> {
@@ -88,6 +88,23 @@ mod func_scope {
             };
             self.funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
+        }
+
+        pub fn push_inner(
+            self: &Arc<Self>,
+            func_def: &'f FuncDef,
+            def_scope: Option<&Arc<Self>>,
+            var_scope: &Arc<VarScope<'f>>,
+        ) -> Arc<Self> {
+            let mut new = self.new_inner();
+            new.push(
+                func_def.name.clone(),
+                func_def.args.clone().into(),
+                &func_def.body,
+                def_scope,
+                var_scope,
+            );
+            Arc::new(new)
         }
 
         pub fn push_arc(&mut self, name: String, func: Arc<Function<'f>>) {
@@ -223,7 +240,7 @@ pub struct BoundFunc<'e> {
 
 #[derive(Debug)]
 pub struct AstInterpreter {
-    builtins: Vec<OwnedFunc>,
+    builtins: Vec<FuncDef>,
     root_filter: Ast,
     variables: Arc<VarScope<'static>>,
     src_reader: SrcReader,
@@ -262,7 +279,7 @@ impl AstInterpreter {
             func_scope.push(
                 f.name.clone(),
                 f.args.clone().into(),
-                &f.filter,
+                &f.body,
                 None,
                 &VarScope::new(),
             );

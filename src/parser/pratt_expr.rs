@@ -6,8 +6,10 @@ use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Span;
 
-use crate::parser::expr_ast::{Ast, BinOps, BreakLabel, Expr, ExprArray, ObjectEntry, SrcId};
-use crate::parser::{PairExt, Rule, PRATT_PARSER};
+use crate::parser::{PairExt, PRATT_PARSER, Rule};
+use crate::parser::expr_ast::{
+    Ast, BinOps, BreakLabel, Expr, ExprArray, FuncDef, ObjectEntry, SrcId,
+};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -48,7 +50,7 @@ pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>, src_id: Src
     parser.pratt_parser(pairs).context("pratt parsing error")
 }
 
-pub fn parse_func_def(pair: Pair<'_, Rule>, src_id: SrcId) -> Result<(String, Vec<String>, Ast)> {
+pub fn parse_func_def(pair: Pair<'_, Rule>, src_id: SrcId) -> Result<FuncDef> {
     let parser = JqPrattParser::new(src_id);
     parser
         .parse_func_def(pair)
@@ -165,7 +167,7 @@ impl JqPrattParser {
         Ok(Expr::IfElse(cond, branch))
     }
 
-    fn parse_func_def(&self, p: Pair<Rule>) -> Result<(String, Vec<String>, Ast), ParseError> {
+    fn parse_func_def(&self, p: Pair<Rule>) -> Result<FuncDef, ParseError> {
         let mut pairs = p.into_inner();
         let name = pairs.next().unwrap().as_str().to_owned();
         let mut args = Vec::new();
@@ -184,18 +186,18 @@ impl JqPrattParser {
                     args.push(argument);
                 }
                 Rule::pratt_expr => {
-                    let mut filter = self.pratt_parser(pair.into_inner())?;
+                    let mut body = self.pratt_parser(pair.into_inner())?;
                     for (argument, span) in bound_args.into_iter().rev() {
-                        filter = self.mk_ast(
+                        body = self.mk_ast(
                             Expr::BindVars(
                                 self.mk_ast(Expr::Call(argument.clone(), Default::default()), span),
                                 self.mk_ast(Expr::Variable(argument), span),
-                                filter,
+                                body,
                             ),
                             span,
                         );
                     }
-                    break Ok((name, args, filter));
+                    break Ok(FuncDef { name, args, body });
                 }
                 node => unreachable!("Unexpected node in parse_func_def: {node:?}"),
             }
@@ -211,6 +213,7 @@ impl JqPrattParser {
         self.pratt_parser(pairs.next().unwrap().into_inner())
     }
 
+    /// Main entry point for expression parsing
     fn pratt_parser<'a>(&self, pairs: impl Iterator<Item = Pair<'a, Rule>>) -> ParseResult {
         let pratt = get_pratt_parser();
 
@@ -360,13 +363,8 @@ impl JqPrattParser {
                 let ast = match op.as_rule() {
                     Rule::dbg_brk_pre => Expr::Breakpoint(rhs),
                     Rule::func_def => {
-                        let (name, args, body) = self.parse_func_def(op)?;
-                        Expr::DefineFunc {
-                            name,
-                            args,
-                            body,
-                            rhs,
-                        }
+                        let func_def = self.parse_func_def(op)?;
+                        Expr::FuncScope(vec![func_def], rhs)
                     }
                     r => panic!("Missing pratt prefix rule {r:?}"),
                 };
@@ -528,6 +526,12 @@ mod test_parser {
             [obj_empty, "{}"]
             [obj_a, "{a: 1}"]
 
+            [call_func_arg, "f(def y: 3; .)"]
+            [def_func_vars, "def func($a;$b;c):.;.", "def func(a; b; c): a as $a|b as $b|.; ."]
+            [def_scope, ". + (def f: .; f)|f"]
+            [def_scope2, ". + def f: .; f|f"]
+
+
             [idx_ident, ".a"]
             [idx_in_obj, "{a: .[-1]|.}"]
             [idx_in_arr, "[.[-1]|.]"]
@@ -596,10 +600,6 @@ mod test_parser {
             [brk_pre, "1+§2*4", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Breakpoint(Literal(Number(2))), Literal(Number(4))))"]
             [brk_post, "1+2*4?§", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Literal(Number(2)), Breakpoint(TryCatch(Literal(Number(4)), None))))"]
 
-            [def_func_vars, "def func($a;$b;c):.;.", r#"DefineFunc { name: "func", args: ["a", "b", "c"], body: BindVars(Call("a", []), Variable("a"), BindVars(Call("b", []), Variable("b"), Dot)), rhs: Dot }"#]
-            [def_scope, ". + (def f:.;f) | f", r#"Pipe(BinOp(Add, Dot, Scope(DefineFunc { name: "f", args: [], body: Dot, rhs: Call("f", []) })), Call("f", []))"# ]
-            [def_scope2, ". + def f:.;f | f", r#"BinOp(Add, Dot, DefineFunc { name: "f", args: [], body: Dot, rhs: Pipe(Call("f", []), Call("f", [])) })"# ]
-
             [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
             [iter, ".[]", "Index(Dot, None)"]
             [idx_item, ".a", r#"Index(Dot, Some(Ident("a")))"#],
@@ -631,11 +631,10 @@ mod test_parser {
             [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("c")), value: Literal(Number(6)) }])"#]
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
             [var_binding, "3 as $a | .", "BindVars(Literal(Number(3)), Variable(\"a\"), Dot)"]
-            [var_bind_prio, "3 as $a| $a | def f:.; $a", r#"BindVars(Literal(Number(3)), Variable("a"), Pipe(Variable("a"), DefineFunc { name: "f", args: [], body: Dot, rhs: Variable("a") }))"#]
+            [var_bind_prio, "3 as $a| $a | def f:.; $a", r#"BindVars(Literal(Number(3)), Variable("a"), Pipe(Variable("a"), FuncScope([FuncDef { name: "f", args: [], body: Dot }], Variable("a"))))"#]
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}] | .", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]), Dot)"#]
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(BindVars(Literal(Number(3)), Variable("a"), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
-            [call_func_arg, "f(def y: 3; .)", r#"Call("f", [DefineFunc { name: "y", args: [], body: Literal(Number(3)), rhs: Dot }])"#]
             [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
             [foreach, "foreach .[] as $i (0; .+$i; .*2)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), BinOp(Mul, Dot, Literal(Number(2))))"#]
@@ -643,8 +642,6 @@ mod test_parser {
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
 
             [string_escape, r#""-\n\t\u00c4-""#, "Literal(String(\"-\\n\\tÄ-\"))"]
-
-            [nested_func, "def a(s): def b: . + s; b + 1; a(0)", r#"DefineFunc { name: "a", args: ["s"], body: DefineFunc { name: "b", args: [], body: BinOp(Add, Dot, Call("s", [])), rhs: BinOp(Add, Call("b", []), Literal(Number(1))) }, rhs: Call("a", [Literal(Number(0))]) }"#]
         ];
     }
 

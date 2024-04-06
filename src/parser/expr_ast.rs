@@ -91,15 +91,13 @@ impl AstLoc {
         }
     }
 
-    pub fn prepend_func(self, name: String, args: Vec<String>, body: Self) -> Self {
-        let span = body.span.clone();
-        let src_id = body.src_id;
-        let expr = Expr::DefineFunc {
-            name,
-            args,
-            body,
-            rhs: self,
-        };
+    pub fn prepend_funcs(self, funcs: Vec<FuncDef>) -> Self {
+        if funcs.is_empty() {
+            return self;
+        }
+        let span = funcs[0].body.span.clone();
+        let src_id = funcs[0].body.src_id;
+        let expr = Expr::FuncScope(funcs, self);
         Self {
             expr: Box::new(expr),
             span,
@@ -195,6 +193,13 @@ impl From<BreakLabel> for Value {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct FuncDef {
+    pub name: String,
+    pub args: Vec<String>,
+    pub body: Ast,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Alternative(Ast, Ast),
     Array(ExprArray),
@@ -205,14 +210,9 @@ pub enum Expr {
     Breakpoint(Ast),
     Call(String, ExprArray),
     Comma(Ast, Ast),
-    DefineFunc {
-        name: String,
-        args: Vec<String>,
-        body: Ast,
-        rhs: Ast,
-    },
     Dot,
     ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
+    FuncScope(Vec<FuncDef>, Ast),
     Ident(String),
     // the first vec is conditions, the second is true branches, with else as the last element
     IfElse(ExprArray, ExprArray),
@@ -251,12 +251,7 @@ impl Expr {
             Expr::Breakpoint(ast) => visitor.visit_breakpoint(ast),
             Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
-            Expr::DefineFunc {
-                name,
-                args,
-                body,
-                rhs,
-            } => visitor.visit_define_function(name, args, body, rhs),
+            Expr::FuncScope(funcs, rhs) => visitor.visit_func_scope(funcs, rhs),
             Expr::Dot => visitor.visit_dot(),
             Expr::ForEach(expr, var, init, update, extract) => unimplemented!(),
             Expr::Ident(i) => visitor.visit_ident(i),
@@ -337,13 +332,7 @@ pub trait ExprVisitor<'e, R> {
         rhs.accept(self);
         self.default()
     }
-    fn visit_define_function(
-        &self,
-        name: &'e str,
-        args: &'e [String],
-        body: &'e AstNode,
-        rhs: &'e AstNode,
-    ) -> R {
+    fn visit_func_scope(&self, funcs: &'e [FuncDef], rhs: &'e AstNode) -> R {
         rhs.accept(self);
         self.default()
     }
