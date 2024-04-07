@@ -210,7 +210,7 @@ impl<'e> Function<'e> {
             arguments.len(),
             "bind() called with incorrect number of arguments"
         );
-        if let Some(args) = &self.args {
+        if let Some(args) = self.args {
             for (name, arg) in args.iter().zip(arguments.iter()) {
                 func_scope = func_scope.push_func_arg(name, arg, arg_scope, var_scope);
             }

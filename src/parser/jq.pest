@@ -96,7 +96,6 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
   primary = _{
     obj |
     if_cond |
-    label |
     break_ |
     foreach|
     func_scope |
@@ -121,5 +120,3 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
     foreach = {"foreach" ~ pratt_expr ~ "as" ~ variable ~ "(" ~ pratt_expr ~ ";" ~ pratt_expr ~ (";" ~ pratt_expr)? ~ ")"}
     reduce = {"reduce" ~ pratt_expr ~ "as" ~ variable ~ "(" ~ pratt_expr ~ ";" ~ pratt_expr ~ ")"}
     try_catch = {"try" ~pratt_expr ~ ("catch" ~ pratt_expr)?}
-
-
