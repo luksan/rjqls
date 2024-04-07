@@ -279,7 +279,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut scope = self.func_scope.clone();
         let var_scope = &self.var_scope;
         for f in funcs {
-            scope = scope.push_func_def(f, None, var_scope);
+            scope = scope.push_func_def(f, var_scope);
         }
         let eval = self.clone_with_func_scope(scope);
         rhs.accept(&eval)

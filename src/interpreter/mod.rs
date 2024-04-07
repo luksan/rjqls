@@ -1,7 +1,6 @@
 use std::sync::{Arc, Weak};
 
 use anyhow::Result;
-use smallvec::SmallVec;
 
 use ast_eval::{ExprEval, VarScope};
 pub use func_scope::FuncScope;
@@ -25,7 +24,7 @@ mod func_scope {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    use crate::interpreter::{Arity, FuncDefArgs, Function};
+    use crate::interpreter::{Arity, Function};
     use crate::interpreter::ast_eval::VarScope;
     use crate::parser::expr_ast::{AstNode, FuncDef};
 
@@ -69,12 +68,11 @@ mod func_scope {
         }
 
         #[must_use]
-        pub fn push_inner<'i>(
+        pub fn push_func_arg<'i>(
             self: &Arc<Self>,
             name: String,
-            args: FuncDefArgs,
             filter: &'i AstNode,
-            def_scope: Option<&Arc<Self>>,
+            def_scope: &Arc<FuncScope<'i>>,
             var_scope: &Arc<VarScope<'i>>,
         ) -> Arc<FuncScope<'i>>
         where
@@ -82,9 +80,9 @@ mod func_scope {
         {
             let mut inner = self.new_inner();
             let func = Function {
-                args,
+                args: None,
                 filter,
-                def_scope: def_scope.map(Arc::downgrade),
+                def_scope: Some(Arc::downgrade(def_scope)),
                 var_scope: var_scope.clone(),
             };
             inner
@@ -97,16 +95,22 @@ mod func_scope {
         pub fn push_func_def(
             self: &Arc<Self>,
             func_def: &'f FuncDef,
-            def_scope: Option<&Arc<Self>>,
             var_scope: &Arc<VarScope<'f>>,
         ) -> Arc<Self> {
-            self.push_inner(
-                func_def.name.clone(),
-                func_def.args.clone().into(),
-                &func_def.body,
-                def_scope,
-                var_scope,
-            )
+            let name = &func_def.name;
+            let args = Some(&func_def.args);
+            let filter = &func_def.body;
+            let mut inner = self.new_inner();
+            let func = Function {
+                args,
+                filter,
+                def_scope: None,
+                var_scope: var_scope.clone(),
+            };
+            inner
+                .funcs
+                .insert(FuncMapKey(name.to_owned(), func.arity()), Arc::new(func));
+            Arc::new(inner)
         }
 
         pub fn get_func<'a>(
@@ -179,18 +183,18 @@ mod func_scope {
 
 #[derive(Debug)]
 pub struct Function<'e> {
-    args: FuncDefArgs,
+    args: FuncDefArgs<'e>,
     filter: &'e AstNode,
     def_scope: Option<Weak<FuncScope<'e>>>,
     var_scope: Arc<VarScope<'e>>,
 }
 
-pub type FuncDefArgs = SmallVec<[String; 5]>;
+pub type FuncDefArgs<'e> = Option<&'e Vec<String>>;
 pub type FuncRet = Result<Value>;
 
 impl<'e> Function<'e> {
     pub fn arity(&self) -> Arity {
-        self.args.len()
+        self.args.map(|x| x.len()).unwrap_or(0)
     }
 
     pub fn filter(&self) -> &'e AstNode {
@@ -213,14 +217,10 @@ impl<'e> Function<'e> {
             "bind() called with incorrect number of arguments"
         );
         let mut func_scope = func_scope.clone();
-        for (name, arg) in self.args.iter().zip(arguments.iter()) {
-            func_scope = func_scope.push_inner(
-                name.clone(),
-                Default::default(),
-                arg,
-                Some(arg_scope),
-                var_scope,
-            );
+        if let Some(args) = &self.args {
+            for (name, arg) in args.iter().zip(arguments.iter()) {
+                func_scope = func_scope.push_func_arg(name.clone(), arg, arg_scope, var_scope);
+            }
         }
         BoundFunc {
             function: self.clone(),
@@ -272,14 +272,9 @@ impl AstInterpreter {
 
     fn build_func_scope(&self) -> Arc<FuncScope> {
         let mut func_scope = Arc::new(FuncScope::default());
+        let var_scope = VarScope::new();
         for f in self.builtins.iter() {
-            func_scope = func_scope.push_inner(
-                f.name.clone(),
-                f.args.clone().into(),
-                &f.body,
-                None,
-                &VarScope::new(),
-            );
+            func_scope = func_scope.push_func_def(f, &var_scope);
         }
         func_scope
     }
