@@ -74,7 +74,7 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
     arith_assign = ${ (alt | add | sub | mul | div | mod_ ) ~ "=" }
     comma = { "," }
     pipe = { "|" }
-  prefix = _{ label | func_def | dbg_brk_pre }
+  prefix = _{ label | dbg_brk_pre }
     dbg_brk_pre = { "§" }
     label = _{ pipe_label ~ labeled_pipe } // A label has to generate both a primary and an infix token from the same source span
       pipe_label = { "label" ~ variable ~ "|" } // Dot in the AST
@@ -99,6 +99,7 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
     label |
     break_ |
     foreach|
+    func_scope |
     reduce |
     try_catch|
     dot_primary |
@@ -112,6 +113,7 @@ pratt_expr = { ppp ~ (infix ~ ppp)* }
     dot_primary = { "." }
     call = { ident ~ ("(" ~ pratt_expr ~ (";" ~ pratt_expr)* ~ ")")? }
     primary_group = { "(" ~ pratt_expr ~ ")" }
+    func_scope = { func_def+ ~ pratt_expr }
     if_cond = { "if" ~ pratt_expr ~ "then" ~ pratt_expr ~ elif* ~ else_? ~ "end" }
     elif = {"elif" ~ pratt_expr ~ "then" ~ pratt_expr}
     else_ = {"else" ~ pratt_expr}

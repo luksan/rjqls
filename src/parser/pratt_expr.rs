@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 
 use anyhow::{Context, Result};
+use itertools::Itertools;
 use pest::error::ErrorVariant;
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
@@ -18,7 +19,6 @@ fn get_pratt_parser() -> &'static PrattParser<Rule> {
 
 fn build_pratt_parser() -> PrattParser<Rule> {
     PrattParser::new()
-        .op(Op::prefix(Rule::func_def))
         .op(Op::infix(Rule::pipe, Assoc::Right) | Op::infix(Rule::labeled_pipe, Assoc::Right))
         .op(Op::infix(Rule::comma, Assoc::Left))
         .op(Op::infix(Rule::alt, Assoc::Right))
@@ -267,6 +267,15 @@ impl JqPrattParser {
                             .unwrap_or_else(|| self.mk_ast(Expr::Dot, full_span));
                         Expr::ForEach(expr, var, init, update, extract)
                     }
+                    Rule::func_scope => {
+                        // TODO: implement itertools::PeekingNext on pest::Pairs
+                        let x = &mut p.into_inner().peekable();
+                        let funcs = x
+                            .peeking_take_while(|p| p.as_rule() == Rule::func_def)
+                            .map(|p| self.parse_func_def(p))
+                            .try_collect()?;
+                        Expr::FuncScope(funcs, self.pratt_parser(x)?)
+                    }
                     Rule::ident => Expr::Ident(p.inner_string(0)),
                     Rule::if_cond => self.parse_if_expr(p)?,
                     Rule::literal => Expr::Literal(parse_literal(p)),
@@ -362,10 +371,6 @@ impl JqPrattParser {
                 let rhs = rhs?;
                 let ast = match op.as_rule() {
                     Rule::dbg_brk_pre => Expr::Breakpoint(rhs),
-                    Rule::func_def => {
-                        let func_def = self.parse_func_def(op)?;
-                        Expr::FuncScope(vec![func_def], rhs)
-                    }
                     r => panic!("Missing pratt prefix rule {r:?}"),
                 };
                 Ok(self.mk_ast(ast, span))
@@ -655,6 +660,17 @@ mod test_parser {
             // println!("{_err:?}")
         }
     }
+
+    #[test]
+    fn test_parse_error() -> Result<()> {
+        let tests = ["def x: break $a; label $a| 1 | .,x, ."];
+        for test in tests {
+            let pairs = pratt_prog_token_pairs(test)?;
+            let _err = pratt_parser(pairs, SrcId::new()).unwrap_err();
+        }
+        Ok(())
+    }
+
     fn assert_ast(filter: &str, ref_ast: &str) {
         let ast = parse_pratt_ast(filter).unwrap();
         let str_rep = format!("{ast:?}");
