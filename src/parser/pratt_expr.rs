@@ -120,6 +120,13 @@ impl JqPrattParser {
         self.label_stack.borrow().last().cloned()
     }
 
+    fn label_scope<T>(&self, inner: impl FnOnce() -> T) -> T {
+        let pos = self.label_stack.borrow().len();
+        let r = inner();
+        self.label_stack.borrow_mut().truncate(pos);
+        r
+    }
+
     fn parse_object(&self, pair: Pair<Rule>) -> Result<Vec<ObjectEntry>, ParseError> {
         let pairs = pair.into_inner();
         if pairs.len() == 0 {
@@ -186,7 +193,7 @@ impl JqPrattParser {
                     args.push(argument);
                 }
                 Rule::pratt_expr => {
-                    let mut body = self.pratt_parser(pair.into_inner())?;
+                    let mut body = self.label_scope(|| self.pratt_parser(pair.into_inner()))?;
                     for (argument, span) in bound_args.into_iter().rev() {
                         body = self.mk_ast(
                             Expr::BindVars(
@@ -281,7 +288,9 @@ impl JqPrattParser {
                     Rule::literal => Expr::Literal(parse_literal(p)),
                     Rule::obj => Expr::Object(self.parse_object(p)?),
                     Rule::pratt_expr => return self.pratt_parser(p.into_inner()),
-                    Rule::primary_group => Expr::Scope(self.parse_inner_expr(p)?), // FIXME: remove Scope from AST
+                    Rule::primary_group => {
+                        Expr::Scope(self.label_scope(|| self.parse_inner_expr(p))?)
+                    }
                     Rule::reduce => {
                         let x = &mut p.into_inner();
                         let input = self.next_expr(x)?;
@@ -663,7 +672,11 @@ mod test_parser {
 
     #[test]
     fn test_parse_error() -> Result<()> {
-        let tests = ["def x: break $a; label $a| 1 | .,x, ."];
+        let tests = [
+            "def x: break $a; label $a| 1 | .,x, .",
+            "def x: label $a|.; break $a| 1 | .,x, .",
+            ".|(label $a|.)|break $a",
+        ];
         for test in tests {
             let pairs = pratt_prog_token_pairs(test)?;
             let _err = pratt_parser(pairs, SrcId::new()).unwrap_err();
