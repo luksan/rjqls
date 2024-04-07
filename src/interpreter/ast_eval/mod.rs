@@ -4,9 +4,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
-use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::Generator;
+use crate::interpreter::BoundFunc;
 use crate::parser::expr_ast::{
     Ast, AstNode, BinOps, BreakLabel, ExprVisitor, FuncDef, ObjectEntry,
 };
@@ -279,7 +279,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut scope = self.func_scope.clone();
         let var_scope = &self.var_scope;
         for f in funcs {
-            scope = scope.push_inner(f, None, var_scope);
+            scope = scope.push_func_def(f, None, var_scope);
         }
         let eval = self.clone_with_func_scope(scope);
         rhs.accept(&eval)

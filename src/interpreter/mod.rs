@@ -58,7 +58,7 @@ mod func_scope {
     }
 
     impl<'f> FuncScope<'f> {
-        pub fn new_inner<'fi>(self: &Arc<Self>) -> FuncScope<'fi>
+        fn new_inner<'fi>(self: &Arc<Self>) -> FuncScope<'fi>
         where
             'f: 'fi,
         {
@@ -68,48 +68,45 @@ mod func_scope {
             }
         }
 
-        pub fn parent(&self) -> Option<&Arc<FuncScope<'f>>> {
-            self.parent.as_ref()
-        }
-
-        pub fn push(
-            &mut self,
+        #[must_use]
+        pub fn push_inner<'i>(
+            self: &Arc<Self>,
             name: String,
             args: FuncDefArgs,
-            filter: &'f AstNode,
+            filter: &'i AstNode,
             def_scope: Option<&Arc<Self>>,
-            var_scope: &Arc<VarScope<'f>>,
-        ) {
+            var_scope: &Arc<VarScope<'i>>,
+        ) -> Arc<FuncScope<'i>>
+        where
+            'f: 'i,
+        {
+            let mut inner = self.new_inner();
             let func = Function {
                 args,
                 filter,
                 def_scope: def_scope.map(Arc::downgrade),
                 var_scope: var_scope.clone(),
             };
-            self.funcs
+            inner
+                .funcs
                 .insert(FuncMapKey(name, func.arity()), Arc::new(func));
+            Arc::new(inner)
         }
 
-        pub fn push_inner(
+        #[must_use]
+        pub fn push_func_def(
             self: &Arc<Self>,
             func_def: &'f FuncDef,
             def_scope: Option<&Arc<Self>>,
             var_scope: &Arc<VarScope<'f>>,
         ) -> Arc<Self> {
-            let mut new = self.new_inner();
-            new.push(
+            self.push_inner(
                 func_def.name.clone(),
                 func_def.args.clone().into(),
                 &func_def.body,
                 def_scope,
                 var_scope,
-            );
-            Arc::new(new)
-        }
-
-        pub fn push_arc(&mut self, name: String, func: Arc<Function<'f>>) {
-            self.funcs
-                .insert(FuncMapKey(name, func.arity()), func.clone());
+            )
         }
 
         pub fn get_func<'a>(
@@ -215,9 +212,9 @@ impl<'e> Function<'e> {
             arguments.len(),
             "bind() called with incorrect number of arguments"
         );
-        let mut func_scope = func_scope.new_inner();
+        let mut func_scope = func_scope.clone();
         for (name, arg) in self.args.iter().zip(arguments.iter()) {
-            func_scope.push(
+            func_scope = func_scope.push_inner(
                 name.clone(),
                 Default::default(),
                 arg,
@@ -227,7 +224,7 @@ impl<'e> Function<'e> {
         }
         BoundFunc {
             function: self.clone(),
-            func_scope: Arc::new(func_scope),
+            func_scope,
         }
     }
 }
@@ -274,9 +271,9 @@ impl AstInterpreter {
     }
 
     fn build_func_scope(&self) -> Arc<FuncScope> {
-        let mut func_scope = FuncScope::default();
+        let mut func_scope = Arc::new(FuncScope::default());
         for f in self.builtins.iter() {
-            func_scope.push(
+            func_scope = func_scope.push_inner(
                 f.name.clone(),
                 f.args.clone().into(),
                 &f.body,
@@ -284,7 +281,7 @@ impl AstInterpreter {
                 &VarScope::new(),
             );
         }
-        Arc::new(func_scope)
+        func_scope
     }
 }
 
