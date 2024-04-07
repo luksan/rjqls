@@ -33,13 +33,7 @@ mod func_scope {
         funcs: HashMap<FuncMapKey<'f>, Arc<Function<'f>>>,
         parent: Option<Arc<FuncScope<'f>>>,
     }
-    impl Clone for FuncScope<'_> {
-        fn clone(&self) -> Self {
-            let funcs = self.funcs.clone();
-            let parent = self.parent.clone();
-            Self { funcs, parent }
-        }
-    }
+
     impl Debug for FuncScope<'_> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             if self.parent.is_none() {
@@ -115,14 +109,14 @@ mod func_scope {
 
         pub fn get_func<'a>(
             self: &'a Arc<Self>,
-            name: &'a str,
+            name: &str,
             arity: Arity,
-        ) -> Option<(&'a Arc<Function<'f>>, Arc<Self>)> {
+        ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
             self.funcs
                 .get(&(name, arity) as &dyn MapKeyT)
                 .map(|func| {
                     (
-                        func,
+                        func.clone(),
                         func.def_scope
                             .as_ref()
                             .map(|weak| weak.upgrade().unwrap())
@@ -202,8 +196,8 @@ impl<'e> Function<'e> {
     }
 
     pub fn bind<'scope>(
-        self: &Arc<Self>,
-        func_scope: &Arc<FuncScope<'scope>>,
+        self: Arc<Self>,
+        mut func_scope: Arc<FuncScope<'scope>>,
         arguments: &'scope [AstNode],
         arg_scope: &Arc<FuncScope<'scope>>,
         var_scope: &Arc<VarScope<'scope>>,
@@ -216,14 +210,13 @@ impl<'e> Function<'e> {
             arguments.len(),
             "bind() called with incorrect number of arguments"
         );
-        let mut func_scope = func_scope.clone();
         if let Some(args) = &self.args {
             for (name, arg) in args.iter().zip(arguments.iter()) {
                 func_scope = func_scope.push_func_arg(name, arg, arg_scope, var_scope);
             }
         }
         BoundFunc {
-            function: self.clone(),
+            function: self,
             func_scope,
         }
     }

@@ -131,10 +131,11 @@ impl<'f> ExprEval<'f> {
     where
         'f: 'expr,
     {
-        let scope = &self.func_scope;
-        let var_scope = &self.var_scope;
-        let (func, func_scope) = scope.get_func(name, args.len())?;
-        Some(func.bind(&func_scope, args, scope, var_scope))
+        self.func_scope
+            .get_func(name, args.len())
+            .map(|(func, func_scope)| {
+                func.bind(func_scope, args, &self.func_scope, &self.var_scope)
+            })
     }
 
     fn get_variable(&self, name: &str) -> Result<Value> {
