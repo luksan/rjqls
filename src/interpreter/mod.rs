@@ -30,7 +30,7 @@ mod func_scope {
 
     #[derive(Default)]
     pub struct FuncScope<'f> {
-        funcs: HashMap<FuncMapKey, Arc<Function<'f>>>,
+        funcs: HashMap<FuncMapKey<'f>, Arc<Function<'f>>>,
         parent: Option<Arc<FuncScope<'f>>>,
     }
     impl Clone for FuncScope<'_> {
@@ -70,7 +70,7 @@ mod func_scope {
         #[must_use]
         pub fn push_func_arg<'i>(
             self: &Arc<Self>,
-            name: String,
+            name: &'i str,
             filter: &'i AstNode,
             def_scope: &Arc<FuncScope<'i>>,
             var_scope: &Arc<VarScope<'i>>,
@@ -109,13 +109,13 @@ mod func_scope {
             };
             inner
                 .funcs
-                .insert(FuncMapKey(name.to_owned(), func.arity()), Arc::new(func));
+                .insert(FuncMapKey(name, func.arity()), Arc::new(func));
             Arc::new(inner)
         }
 
         pub fn get_func<'a>(
             self: &'a Arc<Self>,
-            name: &str,
+            name: &'a str,
             arity: Arity,
         ) -> Option<(&'a Arc<Function<'f>>, Arc<Self>)> {
             self.funcs
@@ -134,7 +134,7 @@ mod func_scope {
     }
 
     #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
-    struct FuncMapKey(String, Arity);
+    struct FuncMapKey<'f>(&'f str, Arity);
 
     // https://stackoverflow.com/questions/45786717/how-to-implement-hashmap-with-two-keys/45795699#45795699
     trait MapKeyT {
@@ -142,7 +142,7 @@ mod func_scope {
         fn arity(&self) -> Arity;
     }
 
-    impl MapKeyT for FuncMapKey {
+    impl MapKeyT for FuncMapKey<'_> {
         fn name(&self) -> &str {
             &self.0
         }
@@ -174,7 +174,7 @@ mod func_scope {
     }
     impl Eq for dyn MapKeyT + '_ {}
 
-    impl<'a> Borrow<dyn MapKeyT + 'a> for FuncMapKey {
+    impl<'a> Borrow<dyn MapKeyT + 'a> for FuncMapKey<'a> {
         fn borrow(&self) -> &(dyn MapKeyT + 'a) {
             self
         }
@@ -219,7 +219,7 @@ impl<'e> Function<'e> {
         let mut func_scope = func_scope.clone();
         if let Some(args) = &self.args {
             for (name, arg) in args.iter().zip(arguments.iter()) {
-                func_scope = func_scope.push_func_arg(name.clone(), arg, arg_scope, var_scope);
+                func_scope = func_scope.push_func_arg(name, arg, arg_scope, var_scope);
             }
         }
         BoundFunc {
