@@ -22,43 +22,143 @@ mod func_scope {
     use std::collections::HashMap;
     use std::fmt::{Debug, Formatter};
     use std::hash::{Hash, Hasher};
-    use std::sync::Arc;
+    use std::marker::PhantomPinned;
+    use std::pin::Pin;
+    use std::ptr::NonNull;
+    use std::sync::{Arc, RwLock, TryLockError};
 
     use crate::interpreter::{Arity, Function};
     use crate::interpreter::ast_eval::VarScope;
     use crate::parser::expr_ast::{AstNode, FuncDef};
 
-    #[derive(Default)]
+    type FuncMap<'f> = HashMap<FuncMapKey<'f>, Arc<Function<'f>>>;
+
+    #[derive(Debug)]
+    struct LockedMap<'f> {
+        lock: RwLock<()>,
+        map_ptr: NonNull<FuncMap<'f>>, // covariant over 'f
+        map: FuncMap<'f>,
+        _pinned: PhantomPinned,
+    }
+
+    impl<'f> LockedMap<'f> {
+        fn empty() -> Pin<Box<Self>> {
+            let map = FuncMap::new();
+            let mut new = Box::new(Self {
+                lock: RwLock::new(()),
+                map_ptr: NonNull::dangling(),
+                map,
+                _pinned: Default::default(),
+            });
+            new.map_ptr = (&new.map).into();
+            Box::into_pin(new)
+        }
+
+        fn new(name: &'f str, func: Function<'f>) -> Pin<Box<Self>> {
+            let mut map = FuncMap::with_capacity(1);
+            map.insert(FuncMapKey(name, func.arity()), Arc::new(func));
+            let mut new = Box::new(Self {
+                lock: RwLock::new(()),
+                map_ptr: NonNull::dangling(),
+                map,
+                _pinned: Default::default(),
+            });
+            new.map_ptr = (&new.map).into();
+            Box::into_pin(new)
+        }
+
+        fn get(&self, name: &str, arity: Arity) -> Option<Arc<Function<'f>>> {
+            let lock = self.lock.read().unwrap();
+            let r: &Arc<Function<'f>> =
+                unsafe { self.map_ptr.as_ref() }.get(&(name, arity) as &dyn MapKeyT)?;
+            let func = r.clone();
+            drop(lock);
+            Some(func)
+        }
+
+        fn insert(&self, name: &'f str, func: Function<'f>) {
+            let lock = self.lock.write().unwrap();
+            unsafe { &mut *self.map_ptr.as_ptr() }
+                .insert(FuncMapKey(name, func.arity()), Arc::new(func));
+            drop(lock);
+        }
+
+        fn try_insert(&self, name: &'f str, func: Function<'f>) {
+            match self.lock.try_write() {
+                Ok(guard) => {
+                    unsafe { &mut *self.map_ptr.as_ptr() }
+                        .insert(FuncMapKey(name, func.arity()), Arc::new(func));
+                    drop(guard);
+                }
+                Err(TryLockError::WouldBlock) => {}
+                _ => panic!("Poisoned RW lock"),
+            }
+        }
+    }
+
     pub struct FuncScope<'f> {
-        funcs: HashMap<FuncMapKey<'f>, Arc<Function<'f>>>,
+        defines: Option<FuncMapKey<'f>>,
+        funcs: Pin<Box<LockedMap<'f>>>,
         parent: Option<Arc<FuncScope<'f>>>,
+    }
+
+    impl Default for FuncScope<'_> {
+        fn default() -> Self {
+            Self {
+                defines: None,
+                funcs: LockedMap::empty(),
+                parent: None,
+            }
+        }
     }
 
     impl Debug for FuncScope<'_> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            if self.parent.is_none() {
-                return writeln!(f, "-- root scope --");
-            }
-            writeln!(f, "== FuncScope ==")?;
-            for (key, func) in self.funcs.iter() {
+            if let Some(key) = &self.defines {
+                let func = self.funcs.get(key.0, key.1).unwrap();
                 writeln!(f, "{}/{} => {}", key.0, func.arity(), func.filter)?;
             }
             if let Some(p) = self.parent.as_ref() {
-                write!(f, "{p:?}")?;
+                write!(f, "{p:?}")
+            } else {
+                writeln!(f, "-- end of root scope --")
             }
-            Ok(())
         }
     }
 
     impl<'f> FuncScope<'f> {
-        fn new_inner<'fi>(self: &Arc<Self>) -> FuncScope<'fi>
+        pub fn new(func_def: &'f FuncDef, var_scope: &Arc<VarScope<'f>>) -> Arc<Self> {
+            let name = &func_def.name;
+            let args = Some(&func_def.args);
+            let filter = &func_def.body;
+            let func = Function {
+                args,
+                filter,
+                def_scope: None,
+                var_scope: var_scope.clone(),
+            };
+            let inner = Self {
+                defines: Some(FuncMapKey(name, func.arity())),
+                funcs: LockedMap::new(name, func),
+                parent: None,
+            };
+            Arc::new(inner)
+        }
+
+        fn new_inner<'fi>(
+            self: &Arc<Self>,
+            name: &'fi str,
+            func: Function<'fi>,
+        ) -> Arc<FuncScope<'fi>>
         where
             'f: 'fi,
         {
-            FuncScope::<'fi> {
+            let inner = FuncScope::<'fi> {
+                defines: Some(FuncMapKey(name, func.arity())),
+                funcs: LockedMap::new(name, func),
                 parent: Some(self.clone()),
-                ..Default::default()
-            }
+            };
+            Arc::new(inner)
         }
 
         #[must_use]
@@ -72,17 +172,13 @@ mod func_scope {
         where
             'f: 'i,
         {
-            let mut inner = self.new_inner();
             let func = Function {
                 args: None,
                 filter,
                 def_scope: Some(Arc::downgrade(def_scope)),
                 var_scope: var_scope.clone(),
             };
-            inner
-                .funcs
-                .insert(FuncMapKey(name, func.arity()), Arc::new(func));
-            Arc::new(inner)
+            self.new_inner(name, func)
         }
 
         #[must_use]
@@ -94,17 +190,13 @@ mod func_scope {
             let name = &func_def.name;
             let args = Some(&func_def.args);
             let filter = &func_def.body;
-            let mut inner = self.new_inner();
             let func = Function {
                 args,
                 filter,
                 def_scope: None,
                 var_scope: var_scope.clone(),
             };
-            inner
-                .funcs
-                .insert(FuncMapKey(name, func.arity()), Arc::new(func));
-            Arc::new(inner)
+            self.new_inner(name, func)
         }
 
         pub fn get_func<'a>(
@@ -113,7 +205,7 @@ mod func_scope {
             arity: Arity,
         ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
             self.funcs
-                .get(&(name, arity) as &dyn MapKeyT)
+                .get(name, arity)
                 .map(|func| {
                     (
                         func.clone(),
@@ -127,7 +219,7 @@ mod func_scope {
         }
     }
 
-    #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
+    #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
     struct FuncMapKey<'f>(&'f str, Arity);
 
     // https://stackoverflow.com/questions/45786717/how-to-implement-hashmap-with-two-keys/45795699#45795699
@@ -264,9 +356,10 @@ impl AstInterpreter {
     }
 
     fn build_func_scope(&self) -> Arc<FuncScope> {
-        let mut func_scope = Arc::new(FuncScope::default());
+        let mut builtins = self.builtins.iter();
         let var_scope = VarScope::new();
-        for f in self.builtins.iter() {
+        let mut func_scope = FuncScope::new(builtins.next().unwrap(), &var_scope);
+        for f in builtins {
             func_scope = func_scope.push_func_def(f, &var_scope);
         }
         func_scope
