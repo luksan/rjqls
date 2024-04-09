@@ -1,3 +1,5 @@
+#![allow(clippy::option_map_unit_fn)]
+
 use std::cell::{Cell, RefCell};
 
 use crate::parser::expr_ast::{

@@ -67,8 +67,7 @@ mod func_scope {
 
         fn get<'a>(&'a self, key: &FuncMapKey<'a>) -> Option<Option<Arc<Function<'f>>>> {
             let lock = self.lock.read().unwrap();
-            let r = unsafe { self.map_ptr.as_ref() }.get(key);
-            let func = r.map(|o| o.clone());
+            let func = unsafe { self.map_ptr.as_ref() }.get(key).cloned();
             drop(lock);
             func
         }
@@ -84,7 +83,7 @@ mod func_scope {
         fn try_insert(&self, key: FuncMapKey<'f>, func: Option<&Arc<Function<'f>>>) {
             match self.lock.try_write() {
                 Ok(guard) => {
-                    unsafe { &mut *self.map_ptr.as_ptr() }.insert(key, func.map(|f| f.clone()));
+                    unsafe { &mut *self.map_ptr.as_ptr() }.insert(key, func.cloned());
                     drop(guard);
                 }
                 Err(TryLockError::WouldBlock) => {}
@@ -258,7 +257,7 @@ mod func_scope {
 
     impl MapKeyT for FuncMapKey<'_> {
         fn name(&self) -> &str {
-            &self.0
+            self.0
         }
 
         fn arity(&self) -> Arity {
@@ -353,6 +352,7 @@ pub struct AstInterpreter {
     builtins: Vec<FuncDef>,
     root_filter: Ast,
     variables: Arc<VarScope<'static>>,
+    #[allow(unused)]
     src_reader: SrcReader,
 }
 

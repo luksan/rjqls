@@ -95,7 +95,7 @@ impl AstLoc {
         if funcs.is_empty() {
             return self;
         }
-        let span = funcs[0].body.span.clone();
+        let span = funcs[0].body.span;
         let src_id = funcs[0].body.src_id;
         let expr = Expr::FuncScope(funcs, self);
         Self {
@@ -155,7 +155,7 @@ impl BreakLabel {
     }
 
     pub fn as_str(&self) -> &str {
-        &*self.name
+        &self.name
     }
 }
 

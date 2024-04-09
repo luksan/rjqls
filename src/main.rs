@@ -18,6 +18,7 @@ struct CommonOpts {
     /// By default, jq pretty-prints JSON output. Using this option will result in more compact
     /// output by instead putting each JSON object on a single line.
     #[bpaf(short('c'), long)]
+    #[allow(unused)] // FIXME: implement comapct output options
     compact_output: bool,
 
     /// Don't read any input at all. Instead, the filter is run once using null as the input.
