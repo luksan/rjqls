@@ -431,6 +431,27 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         Ok(ret)
     }
 
+    fn visit_foreach(
+        &self,
+        input: &'e AstNode,
+        var: &'e str,
+        init: &'e AstNode,
+        update: &'e AstNode,
+        extract: &'e AstNode,
+    ) -> EvalVisitorRet<'e> {
+        let input = input.accept(self)?;
+        let init = next_or_empty!(init.accept(self)?)?;
+        let mut update_eval = self.clone_with_input(init);
+        let mut ret = Generator::empty();
+        for v in input {
+            // FIXME: this shouldn't consume all input if update or extract "break"s
+            update_eval.var_scope = self.var_scope.set_variable(var, v?);
+            update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
+            ret = ret.chain(extract.accept(&update_eval)?);
+        }
+        Ok(ret)
+    }
+
     fn visit_reduce(
         &self,
         input_expr: &'e AstNode,
@@ -556,7 +577,7 @@ mod ast_eval_test {
                   let input = if false {unreachable!()} $(else if true { Value::from_str($input).unwrap() })? else { Value::Null };
                   let output = eval_expr($filter, input).expect("eval_expr() error");
                   let expect: Vec<_> = [$($expect),*].into_iter().map(|v|Value::from_str(v).unwrap()).collect();
-                  assert_eq!(&output, &expect);
+                  assert_eq!(&output, &expect, "Output didn't match reference (right)");
             }
         };
     }
@@ -582,6 +603,8 @@ mod ast_eval_test {
         [and_short_ckt, "(1, false, 2) and (1,2)", ["true","true","false","true","true"]]
 
         [label_first, "label $out | 1 | ., break $out", ["1"]]
+        [foreach_1, "foreach .[] as $item (0; . + $item; [$item, . * 2])", "[1,2,3]", ["[1,2]", "[2,6]","[3,12]"]]
+
     ];
 
     ast_eval_tests![
