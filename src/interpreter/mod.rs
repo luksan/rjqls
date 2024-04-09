@@ -44,6 +44,9 @@ mod func_scope {
         }
     }
 
+    unsafe impl Sync for LockedMap<'_> {}
+    unsafe impl Send for LockedMap<'_> {}
+
     impl<'f> LockedMap<'f> {
         fn empty() -> Self {
             let map = Box::new(FuncMap::new());
