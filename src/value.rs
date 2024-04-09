@@ -71,7 +71,7 @@ impl Display for ArcArray {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct ArcNum(JsonNumber);
 impl<T: Into<JsonNumber>> From<T> for ArcNum {
     fn from(value: T) -> Self {
@@ -86,6 +86,15 @@ impl ArcNum {
 
     pub fn as_bigint(&self) -> Option<i64> {
         self.0.as_i64()
+    }
+}
+
+impl PartialEq for ArcNum {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.as_bigint(), other.as_bigint()) {
+            return a == b;
+        }
+        self.as_f64() == other.as_f64()
     }
 }
 
@@ -548,5 +557,15 @@ mod value_tests {
         assert_eq!(arr.index(&0i32.into()).unwrap(), 1i32.into());
         assert_eq!(arr.index(&1i32.into()).unwrap(), 2i32.into());
         assert_eq!(arr.index(&neg1).unwrap(), 4i32.into());
+    }
+
+    #[test]
+    fn test_compare_eq() {
+        let tests = [("12", "12.0", true)];
+        for (a, b, eq) in tests {
+            let a = ArcValue::from_str(a).unwrap();
+            let b = ArcValue::from_str(b).unwrap();
+            assert_eq!(a == b, eq)
+        }
     }
 }
