@@ -22,8 +22,6 @@ mod func_scope {
     use std::collections::HashMap;
     use std::fmt::{Debug, Formatter};
     use std::hash::{Hash, Hasher};
-    use std::marker::PhantomPinned;
-    use std::pin::Pin;
     use std::ptr::NonNull;
     use std::sync::{Arc, RwLock, TryLockError};
 
@@ -33,38 +31,35 @@ mod func_scope {
 
     type FuncMap<'f> = HashMap<FuncMapKey<'f>, Arc<Function<'f>>>;
 
+    /// A concurrent HashMap covariant over FuncMap<'f>
     #[derive(Debug)]
     struct LockedMap<'f> {
         lock: RwLock<()>,
         map_ptr: NonNull<FuncMap<'f>>, // covariant over 'f
-        map: FuncMap<'f>,
-        _pinned: PhantomPinned,
+    }
+
+    impl Drop for LockedMap<'_> {
+        fn drop(&mut self) {
+            let _ = unsafe { Box::from_raw(self.map_ptr.as_ptr()) };
+        }
     }
 
     impl<'f> LockedMap<'f> {
-        fn empty() -> Pin<Box<Self>> {
-            let map = FuncMap::new();
-            let mut new = Box::new(Self {
+        fn empty() -> Self {
+            let map = Box::new(FuncMap::new());
+            Self {
                 lock: RwLock::new(()),
-                map_ptr: NonNull::dangling(),
-                map,
-                _pinned: Default::default(),
-            });
-            new.map_ptr = (&new.map).into();
-            Box::into_pin(new)
+                map_ptr: Box::leak(map).into(),
+            }
         }
 
-        fn new(name: &'f str, func: Function<'f>) -> Pin<Box<Self>> {
-            let mut map = FuncMap::with_capacity(1);
+        fn new(name: &'f str, func: Function<'f>) -> Self {
+            let mut map = Box::new(FuncMap::with_capacity(1));
             map.insert(FuncMapKey(name, func.arity()), Arc::new(func));
-            let mut new = Box::new(Self {
+            Self {
                 lock: RwLock::new(()),
-                map_ptr: NonNull::dangling(),
-                map,
-                _pinned: Default::default(),
-            });
-            new.map_ptr = (&new.map).into();
-            Box::into_pin(new)
+                map_ptr: Box::leak(map).into(),
+            }
         }
 
         fn get(&self, name: &str, arity: Arity) -> Option<Arc<Function<'f>>> {
@@ -98,7 +93,7 @@ mod func_scope {
 
     pub struct FuncScope<'f> {
         defines: Option<FuncMapKey<'f>>,
-        funcs: Pin<Box<LockedMap<'f>>>,
+        funcs: LockedMap<'f>,
         parent: Option<Arc<FuncScope<'f>>>,
     }
 
