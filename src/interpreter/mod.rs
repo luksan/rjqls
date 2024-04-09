@@ -29,7 +29,7 @@ mod func_scope {
     use crate::interpreter::ast_eval::VarScope;
     use crate::parser::expr_ast::{AstNode, FuncDef};
 
-    type FuncMap<'f> = HashMap<FuncMapKey<'f>, Arc<Function<'f>>>;
+    type FuncMap<'f> = HashMap<FuncMapKey<'f>, Option<Arc<Function<'f>>>>;
 
     /// A concurrent HashMap covariant over FuncMap<'f>
     #[derive(Debug)]
@@ -55,35 +55,33 @@ mod func_scope {
 
         fn new(name: &'f str, func: Function<'f>) -> Self {
             let mut map = Box::new(FuncMap::with_capacity(1));
-            map.insert(FuncMapKey(name, func.arity()), Arc::new(func));
+            map.insert(FuncMapKey(name, func.arity()), Some(Arc::new(func)));
             Self {
                 lock: RwLock::new(()),
                 map_ptr: Box::leak(map).into(),
             }
         }
 
-        fn get(&self, name: &str, arity: Arity) -> Option<Arc<Function<'f>>> {
+        fn get<'a>(&'a self, key: &FuncMapKey<'a>) -> Option<Option<Arc<Function<'f>>>> {
             let lock = self.lock.read().unwrap();
-            let r: &Arc<Function<'f>> =
-                unsafe { self.map_ptr.as_ref() }.get(&(name, arity) as &dyn MapKeyT)?;
-            let func = r.clone();
+            let r = unsafe { self.map_ptr.as_ref() }.get(key);
+            let func = r.map(|o| o.clone());
             drop(lock);
-            Some(func)
+            func
         }
 
         #[allow(unused)]
         fn insert(&self, name: &'f str, func: Function<'f>) {
             let lock = self.lock.write().unwrap();
             unsafe { &mut *self.map_ptr.as_ptr() }
-                .insert(FuncMapKey(name, func.arity()), Arc::new(func));
+                .insert(FuncMapKey(name, func.arity()), Some(Arc::new(func)));
             drop(lock);
         }
 
-        fn try_insert(&self, name: &'f str, func: &Arc<Function<'f>>) {
+        fn try_insert(&self, key: FuncMapKey<'f>, func: Option<&Arc<Function<'f>>>) {
             match self.lock.try_write() {
                 Ok(guard) => {
-                    unsafe { &mut *self.map_ptr.as_ptr() }
-                        .insert(FuncMapKey(name, func.arity()), func.clone());
+                    unsafe { &mut *self.map_ptr.as_ptr() }.insert(key, func.map(|f| f.clone()));
                     drop(guard);
                 }
                 Err(TryLockError::WouldBlock) => {}
@@ -111,7 +109,7 @@ mod func_scope {
     impl Debug for FuncScope<'_> {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             if let Some(key) = &self.defines {
-                let func = self.funcs.get(key.0, key.1).unwrap();
+                let func = self.funcs.get(key).unwrap().unwrap();
                 writeln!(f, "{}/{} => {}", key.0, func.arity(), func.filter)?;
             }
             if let Some(p) = self.parent.as_ref() {
@@ -202,39 +200,47 @@ mod func_scope {
         }
 
         #[inline]
-        fn get_func_local<'a>(
-            self: &'a Arc<Self>,
-            name: &str,
-            arity: Arity,
-        ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
-            self.funcs
-                .get(name, arity)
-                .map(|func| (func.clone(), func.def_scope.upgrade().unwrap()))
+        fn get_func_local(
+            self: &Arc<Self>,
+            key: &FuncMapKey,
+        ) -> Option<Option<(Arc<Function<'f>>, Arc<Self>)>> {
+            Some(
+                self.funcs
+                    .get(key)?
+                    .map(|func| (func.clone(), func.def_scope.upgrade().unwrap())),
+            )
         }
 
-        fn get_func_no_caching<'a>(
-            self: &'a Arc<Self>,
-            name: &str,
-            arity: Arity,
+        fn get_func_no_caching(
+            self: &Arc<Self>,
+            key: &FuncMapKey<'_>,
         ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
-            self.get_func_local(name, arity)
-                .or_else(move || self.parent.as_ref().and_then(|p| p.get_func(name, arity)))
+            if let Some(f) = self.get_func_local(key) {
+                return f;
+            }
+            self.parent
+                .as_ref()
+                .and_then(|p| p.get_func_no_caching(key))
         }
 
         pub fn get_func<'a>(
-            self: &'a Arc<Self>,
-            name: &str,
+            self: &Arc<Self>,
+            name: &'a str,
             arity: Arity,
         ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
-            if let Some(ret) = self.get_func_local(name, arity) {
-                return Some(ret);
+            let key = FuncMapKey(name, arity);
+            if let Some(ret) = self.get_func_local(&key) {
+                return ret;
             }
             let ret = self
                 .parent
                 .as_ref()
-                .and_then(|p| p.get_func_no_caching(name, arity))?;
-            self.funcs.try_insert(name, &ret.0);
-            Some(ret)
+                .and_then(|p| p.get_func_no_caching(&key));
+
+            // insert result into the cache
+            self.funcs.try_insert(key, ret.as_ref().map(|x| &x.0));
+
+            ret
         }
     }
 
