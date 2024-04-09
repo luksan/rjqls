@@ -5,7 +5,7 @@ use rjqls::value::Value;
 fn test_include_ok() {
     let mut int = AstInterpreter::new(r#"include "tests/test_include"; func_b"#).unwrap();
     let one = int.eval_input(Value::Null).unwrap();
-    assert_eq!(one[0].as_u64(), Some(2))
+    assert_eq!(one[0].as_bigint(), Some(2))
 }
 
 #[test]

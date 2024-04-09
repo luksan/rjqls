@@ -543,7 +543,6 @@ mod test_parser {
             [def_scope, ". + (def f: .; f)|f"]
             [def_scope2, ". + def f: .; f|f"]
 
-
             [idx_ident, ".a"]
             [idx_in_obj, "{a: .[-1]|.}"]
             [idx_in_arr, "[.[-1]|.]"]

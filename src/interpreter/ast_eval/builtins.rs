@@ -51,7 +51,7 @@ impl<'f> ExprEval<'f> {
                     input
                         .iter()
                         .map(|c| {
-                            c.as_u64()
+                            c.as_bigint()
                                 .context("Unicode codepoints must be numeric")
                                 .and_then(|i| char::from_u32(i as _).context("Invalid codepoint"))
                         })

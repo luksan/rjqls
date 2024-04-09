@@ -84,8 +84,8 @@ impl ArcNum {
         self.0.as_f64()
     }
 
-    pub fn as_u64(&self) -> Option<u64> {
-        self.0.as_u64()
+    pub fn as_bigint(&self) -> Option<i64> {
+        self.0.as_i64()
     }
 }
 
@@ -274,9 +274,9 @@ impl ArcValue {
         }
     }
 
-    pub fn as_u64(&self) -> Option<u64> {
+    pub fn as_bigint(&self) -> Option<i64> {
         if let Self::Number(num) = self {
-            num.as_u64()
+            num.as_bigint()
         } else {
             None
         }
@@ -399,8 +399,8 @@ impl Display for ArcValue {
 
 impl ArcValue {
     pub fn slice(&self, start: &Self, end: &Self) -> Result<Self> {
-        let start = start.as_u64().context("Start index must be integer")? as usize;
-        let end = end.as_u64().context("end index must be integer")? as usize;
+        let start = start.as_bigint().context("Start index must be integer")? as usize;
+        let end = end.as_bigint().context("end index must be integer")? as usize;
         match self {
             ArcValue::Array(a) => {
                 let input = &a.0;
@@ -433,7 +433,7 @@ impl ValueOps for ArcValue {
             }
 
             (Self::Number(a), Self::Number(b)) => {
-                if let (Some(a), Some(b)) = (a.as_u64(), b.as_u64()) {
+                if let (Some(a), Some(b)) = (a.as_bigint(), b.as_bigint()) {
                     Self::Number((a + b).into())
                 } else {
                     (a.0.as_f64().unwrap() + b.0.as_f64().unwrap()).into()
@@ -456,7 +456,7 @@ impl ValueOps for ArcValue {
     fn sub(&self, other: &Self) -> Result<Self> {
         Ok(match (self, other) {
             (Self::Number(a), Self::Number(b)) => {
-                if let (Some(a), Some(b)) = (a.as_u64(), b.as_u64()) {
+                if let (Some(a), Some(b)) = (a.as_bigint(), b.as_bigint()) {
                     Self::Number((a - b).into())
                 } else {
                     (a.0.as_f64().unwrap() - b.0.as_f64().unwrap()).into()
