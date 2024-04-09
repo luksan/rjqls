@@ -200,6 +200,27 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
+    fn visit_foreach(
+        &self,
+        input: &'_ AstNode,
+        var: &'_ str,
+        init: &'_ AstNode,
+        update: &'_ AstNode,
+        extract: &'_ AstNode,
+    ) -> () {
+        self.puts("foreach");
+        input.accept(self);
+        self.puts(" as $");
+        self.puts(var);
+        self.putc('(');
+        init.accept(self);
+        self.putc(';');
+        update.accept(self);
+        self.putc(';');
+        extract.accept(self);
+        self.putc(')');
+    }
+
     fn visit_reduce(&self, input: &AstNode, var: &str, init: &AstNode, update: &AstNode) -> () {
         self.puts("reduce ");
         input.accept(self);

@@ -253,7 +253,9 @@ impl Expr {
             Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
             Expr::FuncScope(funcs, rhs) => visitor.visit_func_scope(funcs, rhs),
             Expr::Dot => visitor.visit_dot(),
-            Expr::ForEach(expr, var, init, update, extract) => unimplemented!(),
+            Expr::ForEach(expr, var, init, update, extract) => {
+                visitor.visit_foreach(expr, var, init, update, extract)
+            }
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
@@ -371,6 +373,20 @@ pub trait ExprVisitor<'e, R> {
     fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
         lhs.accept(self);
         rhs.accept(self);
+        self.default()
+    }
+    fn visit_foreach(
+        &self,
+        input: &'e AstNode,
+        var: &'e str,
+        init: &'e AstNode,
+        update: &'e AstNode,
+        extract: &'e AstNode,
+    ) -> R {
+        input.accept(self);
+        init.accept(self);
+        update.accept(self);
+        extract.accept(self);
         self.default()
     }
     fn visit_reduce(
