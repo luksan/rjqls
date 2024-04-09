@@ -2,15 +2,13 @@ use std::cell::RefCell;
 
 use anyhow::{Context, Result};
 use itertools::Itertools;
-use pest::error::ErrorVariant;
+use pest::error::{Error as PestError, ErrorVariant};
 use pest::iterators::{Pair, Pairs};
 use pest::pratt_parser::{Assoc, Op, PrattParser};
 use pest::Span;
 
 use crate::parser::{PairExt, PRATT_PARSER, Rule};
-use crate::parser::expr_ast::{
-    Ast, BinOps, BreakLabel, Expr, ExprArray, FuncDef, ObjectEntry, SrcId,
-};
+use crate::parser::expr_ast::{Ast, BinOps, BreakLabel, Expr, ExprArray, FuncDef, ObjectEntry, SrcId};
 use crate::value::Value;
 
 fn get_pratt_parser() -> &'static PrattParser<Rule> {
@@ -42,7 +40,7 @@ fn build_pratt_parser() -> PrattParser<Rule> {
         .op(Op::prefix(Rule::dbg_brk_pre) | Op::postfix(Rule::dbg_brk_post))
 }
 
-pub type ParseError = pest::error::Error<Rule>;
+pub type ParseError = Box<PestError<Rule>>;
 pub type ParseResult = Result<Ast, ParseError>;
 
 pub fn pratt_parser<'a>(pairs: impl Iterator<Item = Pair<'a, Rule>>, src_id: SrcId) -> Result<Ast> {
@@ -238,7 +236,7 @@ impl JqPrattParser {
                         Expr::Array(arr)
                     }
                     Rule::break_ => Expr::Break(self.find_label(p).map_err(|pair| {
-                        ParseError::new_from_span(
+                        PestError::new_from_span(
                             ErrorVariant::CustomError {
                                 message: format!("$*label-{} is not defined", pair.as_str()),
                             },
