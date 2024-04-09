@@ -22,8 +22,9 @@ mod func_scope {
     use std::collections::HashMap;
     use std::fmt::{Debug, Formatter};
     use std::hash::{Hash, Hasher};
+    use std::ops::{Deref, DerefMut};
     use std::ptr::NonNull;
-    use std::sync::{Arc, RwLock, TryLockError};
+    use std::sync::{Arc, RwLock, RwLockReadGuard, TryLockError};
 
     use crate::interpreter::{Arity, Function};
     use crate::interpreter::ast_eval::VarScope;
@@ -90,6 +91,32 @@ mod func_scope {
                 _ => panic!("Poisoned RW lock"),
             }
         }
+
+        pub fn iter(&self) -> MapIter<'f, '_> {
+            let lock = self.lock.read().unwrap();
+            let iter = unsafe { &*self.map_ptr.as_ptr() }.iter();
+            MapIter(iter, lock)
+        }
+    }
+
+    type MapIterator<'f, 'm> =
+        std::collections::hash_map::Iter<'m, FuncMapKey<'f>, Option<Arc<Function<'f>>>>;
+    #[allow(dead_code)] // warns about the lock never being used
+                        // members are dropped in order, so iter goes before lock guard
+    struct MapIter<'f, 'm>(MapIterator<'f, 'm>, RwLockReadGuard<'m, ()>);
+
+    impl<'f, 'm> Deref for MapIter<'f, 'm> {
+        type Target = MapIterator<'f, 'm>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl<'f, 'm> DerefMut for MapIter<'f, 'm> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
     }
 
     pub struct FuncScope<'f> {
@@ -112,7 +139,25 @@ mod func_scope {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             if let Some(key) = &self.defines {
                 let func = self.funcs.get(key).unwrap().unwrap();
-                writeln!(f, "{}/{} => {}", key.0, func.arity(), func.filter)?;
+                writeln!(f, "{}/{} => {}", key.0, key.1, func.filter)?;
+            }
+            let mut iter = self.funcs.iter();
+            if iter.len() > 1 {
+                // Print the cached entries and stop recursing
+                writeln!(f, "cached in this scope")?;
+                for (key, func) in &mut *iter {
+                    if Some(key) == self.defines.as_ref() {
+                        // already printed above
+                        continue;
+                    }
+                    if let Some(func) = func {
+                        writeln!(f, "{}/{} => {}", key.0, key.1, func.filter)?;
+                    } else {
+                        writeln!(f, "{}/{} not present", key.0, key.1)?;
+                    }
+                }
+                writeln!(f, "--end of FuncScope dbg output--")?;
+                return Ok(());
             }
             if let Some(p) = self.parent.as_ref() {
                 write!(f, "{p:?}")

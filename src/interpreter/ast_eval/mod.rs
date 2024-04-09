@@ -4,12 +4,10 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 
 use crate::interpreter::bind_var_pattern::BindVars;
+use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
 use crate::interpreter::generator::Generator;
-use crate::interpreter::BoundFunc;
-use crate::parser::expr_ast::{
-    Ast, AstNode, BinOps, BreakLabel, ExprVisitor, FuncDef, ObjectEntry,
-};
+use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, ExprVisitor, FuncDef, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
 mod builtins;
@@ -252,8 +250,11 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> EvalVisitorRet<'e> {
-        println!("{:?}", self.func_scope.as_ref());
+        println!("Breakpoint hit at {:?}", expr);
+        println!("Current input: {:?}", self.input);
+        print!("FuncScope:\n{:?}", self.func_scope.as_ref());
         println!("{:?}", self.var_scope.as_ref());
+        println!("> Continuing <\n");
         expr.accept(self)
     }
 
