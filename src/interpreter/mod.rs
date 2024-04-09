@@ -71,6 +71,7 @@ mod func_scope {
             Some(func)
         }
 
+        #[allow(unused)]
         fn insert(&self, name: &'f str, func: Function<'f>) {
             let lock = self.lock.write().unwrap();
             unsafe { &mut *self.map_ptr.as_ptr() }
@@ -78,11 +79,11 @@ mod func_scope {
             drop(lock);
         }
 
-        fn try_insert(&self, name: &'f str, func: Function<'f>) {
+        fn try_insert(&self, name: &'f str, func: &Arc<Function<'f>>) {
             match self.lock.try_write() {
                 Ok(guard) => {
                     unsafe { &mut *self.map_ptr.as_ptr() }
-                        .insert(FuncMapKey(name, func.arity()), Arc::new(func));
+                        .insert(FuncMapKey(name, func.arity()), func.clone());
                     drop(guard);
                 }
                 Err(TryLockError::WouldBlock) => {}
@@ -126,34 +127,40 @@ mod func_scope {
             let name = &func_def.name;
             let args = Some(&func_def.args);
             let filter = &func_def.body;
-            let func = Function {
-                args,
-                filter,
-                def_scope: None,
-                var_scope: var_scope.clone(),
-            };
-            let inner = Self {
-                defines: Some(FuncMapKey(name, func.arity())),
-                funcs: LockedMap::new(name, func),
-                parent: None,
-            };
-            Arc::new(inner)
+            Arc::new_cyclic(|weak| {
+                let func = Function {
+                    args,
+                    filter,
+                    def_scope: weak.clone(),
+                    var_scope: var_scope.clone(),
+                };
+                Self {
+                    defines: Some(FuncMapKey(name, func.arity())),
+                    funcs: LockedMap::new(name, func),
+                    parent: None,
+                }
+            })
         }
 
         fn new_inner<'fi>(
             self: &Arc<Self>,
             name: &'fi str,
-            func: Function<'fi>,
+            mut func: Function<'fi>,
+            self_scope: bool,
         ) -> Arc<FuncScope<'fi>>
         where
             'f: 'fi,
         {
-            let inner = FuncScope::<'fi> {
-                defines: Some(FuncMapKey(name, func.arity())),
-                funcs: LockedMap::new(name, func),
-                parent: Some(self.clone()),
-            };
-            Arc::new(inner)
+            Arc::new_cyclic(|weak| {
+                if self_scope {
+                    func.def_scope = weak.clone();
+                }
+                FuncScope::<'fi> {
+                    defines: Some(FuncMapKey(name, func.arity())),
+                    funcs: LockedMap::new(name, func),
+                    parent: Some(self.clone()),
+                }
+            })
         }
 
         #[must_use]
@@ -170,10 +177,10 @@ mod func_scope {
             let func = Function {
                 args: None,
                 filter,
-                def_scope: Some(Arc::downgrade(def_scope)),
+                def_scope: Arc::downgrade(def_scope),
                 var_scope: var_scope.clone(),
             };
-            self.new_inner(name, func)
+            self.new_inner(name, func, false)
         }
 
         #[must_use]
@@ -188,10 +195,30 @@ mod func_scope {
             let func = Function {
                 args,
                 filter,
-                def_scope: None,
+                def_scope: Arc::downgrade(self), // this will be replaced with the new scope in new_inner()
                 var_scope: var_scope.clone(),
             };
-            self.new_inner(name, func)
+            self.new_inner(name, func, true)
+        }
+
+        #[inline]
+        fn get_func_local<'a>(
+            self: &'a Arc<Self>,
+            name: &str,
+            arity: Arity,
+        ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
+            self.funcs
+                .get(name, arity)
+                .map(|func| (func.clone(), func.def_scope.upgrade().unwrap()))
+        }
+
+        fn get_func_no_caching<'a>(
+            self: &'a Arc<Self>,
+            name: &str,
+            arity: Arity,
+        ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
+            self.get_func_local(name, arity)
+                .or_else(move || self.parent.as_ref().and_then(|p| p.get_func(name, arity)))
         }
 
         pub fn get_func<'a>(
@@ -199,18 +226,15 @@ mod func_scope {
             name: &str,
             arity: Arity,
         ) -> Option<(Arc<Function<'f>>, Arc<Self>)> {
-            self.funcs
-                .get(name, arity)
-                .map(|func| {
-                    (
-                        func.clone(),
-                        func.def_scope
-                            .as_ref()
-                            .map(|weak| weak.upgrade().unwrap())
-                            .unwrap_or_else(|| self.clone()),
-                    )
-                })
-                .or_else(move || self.parent.as_ref().and_then(|p| p.get_func(name, arity)))
+            if let Some(ret) = self.get_func_local(name, arity) {
+                return Some(ret);
+            }
+            let ret = self
+                .parent
+                .as_ref()
+                .and_then(|p| p.get_func_no_caching(name, arity))?;
+            self.funcs.try_insert(name, &ret.0);
+            Some(ret)
         }
     }
 
@@ -266,7 +290,7 @@ mod func_scope {
 pub struct Function<'e> {
     args: FuncDefArgs<'e>,
     filter: &'e AstNode,
-    def_scope: Option<Weak<FuncScope<'e>>>,
+    def_scope: Weak<FuncScope<'e>>,
     var_scope: Arc<VarScope<'e>>,
 }
 
