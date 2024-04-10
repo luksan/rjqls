@@ -12,23 +12,31 @@ pub struct Generator<'e> {
 }
 pub type ResVal = Result<Value, EvalError>;
 
+impl Default for Generator<'_> {
+    fn default() -> Self {
+        Self {
+            src: Box::new(iter::empty()),
+        }
+    }
+}
+
 impl<'e> Generator<'e> {
     pub fn from_iter(i: impl IntoIterator<Item = ResVal> + 'e) -> Generator<'e> {
         Generator {
             src: Box::new(i.into_iter()),
+            ..Self::default()
         }
     }
 
     pub fn from_break(label: BreakLabel) -> Self {
         Self {
             src: Box::new(iter::once(Err(EvalError::Break(label)))),
+            ..Self::default()
         }
     }
 
     pub fn empty() -> Generator<'static> {
-        Generator {
-            src: Box::new(iter::empty()),
-        }
+        Generator::default()
     }
 
     #[must_use]
@@ -48,9 +56,7 @@ impl<'e> Generator<'e> {
     #[must_use]
     pub fn chain_res(self, next: Result<Self, EvalError>) -> Self {
         let next = next.unwrap_or_else(|err| Self::from_iter(iter::once(Err(err))));
-        Self {
-            src: Box::new(self.src.chain(next.src)),
-        }
+        self.chain_gen(next)
     }
 }
 
@@ -67,11 +73,6 @@ impl Iterator for Generator<'_> {
     }
 }
 
-impl Default for Generator<'_> {
-    fn default() -> Self {
-        Self::from_iter(iter::empty())
-    }
-}
 impl From<Value> for Generator<'_> {
     fn from(value: Value) -> Self {
         Generator::from_iter(iter::once(Ok(value)))
