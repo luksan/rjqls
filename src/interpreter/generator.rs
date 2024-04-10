@@ -40,17 +40,15 @@ impl<'e> Generator<'e> {
     }
 
     #[must_use]
-    pub fn chain_gen(self, next: Self) -> Self {
+    pub fn chain_gen(self, next: impl IntoIterator<Item = ResVal> + 'e) -> Self {
         Self::from_iter(self.chain(next))
     }
 
     #[must_use]
     pub fn chain_break(self, next: Self, label: BreakLabel) -> Self {
-        Self {
-            src: Box::new(self.src.chain(next.src.take_while(
-                move |res| !matches!(res, Err(EvalError::Break(lbl)) if &label == lbl),
-            ))),
-        }
+        self.chain_gen(
+            next.take_while(move |res| !matches!(res, Err(EvalError::Break(lbl)) if &label == lbl)),
+        )
     }
 
     #[must_use]
