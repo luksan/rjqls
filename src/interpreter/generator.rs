@@ -32,10 +32,8 @@ impl<'e> Generator<'e> {
     }
 
     #[must_use]
-    pub fn chain(self, next: Self) -> Self {
-        Self {
-            src: Box::new(self.src.chain(next.src)),
-        }
+    pub fn chain_gen(self, next: Self) -> Self {
+        Self::from_iter(self.chain(next))
     }
 
     #[must_use]

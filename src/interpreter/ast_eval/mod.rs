@@ -186,7 +186,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut ret = Generator::empty();
         for e in elements {
             let v = e.accept(self)?;
-            ret = ret.chain(v.into_iter());
+            ret = ret.chain_gen(v.into_iter());
         }
         // TODO: build array value with a closure
         Ok(Value::from(ret.collect::<CollectVecResult>()?).into())
@@ -197,7 +197,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         for v in vals.accept(self)? {
             let new_scope = BindVars::bind(&v?, vars, &self.var_scope)?;
             let eval = self.clone_with_var_scope(new_scope);
-            ret = ret.chain(rhs.accept(&eval)?);
+            ret = ret.chain_gen(rhs.accept(&eval)?);
         }
         Ok(ret)
     }
@@ -304,14 +304,14 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             branches: &'g [AstNode],
         ) -> EvalVisitorRet<'g> {
             if cond.is_empty() {
-                ret = ret.chain(branches[0].accept(this)?);
+                ret = ret.chain_gen(branches[0].accept(this)?);
                 return Ok(ret);
             }
             let vals = cond[0].accept(this)?;
             for v in vals {
                 let v = v?;
                 if v.is_truthy() {
-                    ret = ret.chain(branches[0].accept(this)?);
+                    ret = ret.chain_gen(branches[0].accept(this)?);
                 } else {
                     ret = check_remaining(this, ret, &cond[1..], &branches[1..])?;
                 }
@@ -426,7 +426,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut rhs_eval = self.clone();
         for value in lhs {
             rhs_eval.input = value?;
-            ret = ret.chain(rhs.accept(&rhs_eval)?);
+            ret = ret.chain_gen(rhs.accept(&rhs_eval)?);
         }
         Ok(ret)
     }
@@ -447,7 +447,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             // FIXME: this shouldn't consume all input if update or extract "break"s
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
             update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
-            ret = ret.chain(extract.accept(&update_eval)?);
+            ret = ret.chain_gen(extract.accept(&update_eval)?);
         }
         Ok(ret)
     }
