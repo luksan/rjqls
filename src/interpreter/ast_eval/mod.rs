@@ -265,7 +265,8 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 self.input.clone(),
                 bound_func.function.var_scope.clone(),
             );
-            bound_func.function.filter.accept(&eval)
+            // bound_func.function.filter.accept(&eval)
+            Ok(Generator::from_accept(eval, bound_func.function.filter))
         } else {
             Ok(self.get_builtin(name, args)?)
         }

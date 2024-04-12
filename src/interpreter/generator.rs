@@ -3,40 +3,38 @@ use std::iter;
 
 use anyhow::Result;
 
-use crate::interpreter::ast_eval::EvalError;
-use crate::parser::expr_ast::BreakLabel;
+use crate::interpreter::ast_eval::{EvalError, ExprEval};
+use crate::parser::expr_ast::{AstNode, BreakLabel};
 use crate::value::Value;
 
-pub struct Generator<'e> {
-    src: Box<dyn Iterator<Item = ResVal> + 'e>,
+pub enum Generator<'e> {
+    Iter(Box<dyn Iterator<Item = ResVal> + 'e>),
+    Accept(Option<Box<Acceptor<'e>>>),
 }
+
 pub type ResVal = Result<Value, EvalError>;
 
 impl Default for Generator<'_> {
     fn default() -> Self {
-        Self {
-            src: Box::new(iter::empty()),
-        }
+        Self::Iter(Box::new(iter::empty()))
     }
 }
 
 impl<'e> Generator<'e> {
+    pub fn empty() -> Generator<'static> {
+        Generator::default()
+    }
+
     pub fn from_iter(i: impl IntoIterator<Item = ResVal> + 'e) -> Generator<'e> {
-        Generator {
-            src: Box::new(i.into_iter()),
-            ..Self::default()
-        }
+        Generator::Iter(Box::new(i.into_iter()))
     }
 
     pub fn from_break(label: BreakLabel) -> Self {
-        Self {
-            src: Box::new(iter::once(Err(EvalError::Break(label)))),
-            ..Self::default()
-        }
+        Self::from_iter(iter::once(Err(EvalError::Break(label))))
     }
 
-    pub fn empty() -> Generator<'static> {
-        Generator::default()
+    pub fn from_accept(eval: ExprEval<'e>, ast: &'e AstNode) -> Self {
+        Self::Accept(Some(Box::new(Acceptor { eval, ast })))
     }
 
     #[must_use]
@@ -63,11 +61,33 @@ impl Debug for Generator<'_> {
         write!(f, "Generator {{..}}")
     }
 }
+
 impl Iterator for Generator<'_> {
     type Item = ResVal;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.src.next()
+        loop {
+            match self {
+                Generator::Iter(src) => return src.next(),
+                Generator::Accept(a) => *self = a.take().unwrap().into_iter(),
+            }
+        }
+    }
+}
+
+pub struct Acceptor<'e> {
+    eval: ExprEval<'e>,
+    ast: &'e AstNode,
+}
+
+impl<'e> IntoIterator for Acceptor<'e> {
+    type Item = ResVal;
+    type IntoIter = Generator<'e>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let r = self.ast.accept(&self.eval);
+        let x = Generator::empty();
+        x.chain_res(r)
     }
 }
 

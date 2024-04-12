@@ -177,6 +177,7 @@ mod func_scope {
                     args,
                     filter,
                     def_scope: weak.clone(),
+                    _arg_def_scope: None,
                     var_scope: var_scope.clone(),
                 };
                 Self {
@@ -223,6 +224,7 @@ mod func_scope {
                 args: None,
                 filter,
                 def_scope: Arc::downgrade(def_scope),
+                _arg_def_scope: Some(def_scope.clone()),
                 var_scope: var_scope.clone(),
             };
             self.new_inner(name, func, false)
@@ -241,6 +243,7 @@ mod func_scope {
                 args,
                 filter,
                 def_scope: Arc::downgrade(self), // this will be replaced with the new scope in new_inner()
+                _arg_def_scope: None,
                 var_scope: var_scope.clone(),
             };
             self.new_inner(name, func, true)
@@ -344,6 +347,7 @@ pub struct Function<'e> {
     args: FuncDefArgs<'e>,
     filter: &'e AstNode,
     def_scope: Weak<FuncScope<'e>>,
+    _arg_def_scope: Option<Arc<FuncScope<'e>>>, // used to keep the arg scope alive
     var_scope: Arc<VarScope<'e>>,
 }
 
