@@ -43,7 +43,7 @@ mod func_scope {
     impl Drop for LockedMap<'_> {
         fn drop(&mut self) {
             // This should be dropped via into_funcmap()
-            // let _ = unsafe { Box::from_raw(self.map_ptr.as_ptr()) };
+            let _ = unsafe { Box::from_raw(self.map_ptr.as_ptr()) };
         }
     }
 
@@ -157,29 +157,24 @@ mod func_scope {
         fn drop(&mut self) {
             // The default Drop impl will drop recursively, which will overflow the stack
             let mut scopes = vec![];
-            fn drop_scope<'f>(scope: &mut FuncScope<'f>, scopes: &mut Vec<Arc<FuncScope<'f>>>) {
+            fn drop_scope<'f>(scope: &mut FuncScope<'f>, scopes: &mut Vec<FuncScope<'f>>) {
                 let map = mem::take(&mut scope.funcs).into_funcmap();
-                if let Some(parent) = scope.parent.take() {
-                    if Arc::strong_count(&parent) <= 1 {
-                        scopes.push(parent);
-                    }
+                if let Some(parent) = scope.parent.take().and_then(Arc::into_inner) {
+                    scopes.push(parent);
                 }
-                for mut f in map.into_values() {
-                    if let Some(f) = f.as_mut().and_then(Arc::get_mut) {
-                        if let Some(s) = f._arg_def_scope.take() {
-                            if Arc::strong_count(&s) <= 1 {
-                                scopes.push(s)
-                            }
-                        }
+                for mut f in map
+                    .into_values()
+                    .filter_map(|f| f.and_then(Arc::into_inner))
+                {
+                    if let Some(s) = f._arg_def_scope.take().and_then(Arc::into_inner) {
+                        scopes.push(s)
                     }
                 }
             }
 
             drop_scope(self, &mut scopes);
             while let Some(mut scope) = scopes.pop() {
-                if let Some(scope) = Arc::get_mut(&mut scope) {
-                    drop_scope(scope, &mut scopes);
-                };
+                drop_scope(&mut scope, &mut scopes);
             }
         }
     }
