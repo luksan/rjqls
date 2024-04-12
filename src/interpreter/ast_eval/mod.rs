@@ -606,6 +606,7 @@ mod ast_eval_test {
         [label_first, "label $out | 1 | ., break $out", ["1"]]
         [foreach_1, "foreach .[] as $item (0; . + $item; [$item, . * 2])", "[1,2,3]", ["[1,2]", "[2,6]","[3,12]"]]
 
+        [tail_recursion, "def a($x): if $x > 0 then a($x-1) else empty end; a(3000)", []]
     ];
 
     ast_eval_tests![

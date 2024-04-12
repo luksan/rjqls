@@ -22,6 +22,7 @@ mod func_scope {
     use std::collections::HashMap;
     use std::fmt::{Debug, Formatter};
     use std::hash::{Hash, Hasher};
+    use std::mem;
     use std::ops::{Deref, DerefMut};
     use std::ptr::NonNull;
     use std::sync::{Arc, RwLock, RwLockReadGuard, TryLockError};
@@ -41,12 +42,29 @@ mod func_scope {
 
     impl Drop for LockedMap<'_> {
         fn drop(&mut self) {
-            let _ = unsafe { Box::from_raw(self.map_ptr.as_ptr()) };
+            // This should be dropped via into_funcmap()
+            // let _ = unsafe { Box::from_raw(self.map_ptr.as_ptr()) };
+        }
+    }
+
+    impl<'f> LockedMap<'f> {
+        fn into_funcmap(self) -> Box<FuncMap<'f>> {
+            let lock = self.lock.write();
+            let r = unsafe { Box::from_raw(self.map_ptr.as_ptr()) };
+            drop(lock);
+            mem::forget(self);
+            r
         }
     }
 
     unsafe impl Sync for LockedMap<'_> {}
     unsafe impl Send for LockedMap<'_> {}
+
+    impl Default for LockedMap<'_> {
+        fn default() -> Self {
+            Self::empty()
+        }
+    }
 
     impl<'f> LockedMap<'f> {
         fn empty() -> Self {
@@ -131,6 +149,37 @@ mod func_scope {
                 defines: None,
                 funcs: LockedMap::empty(),
                 parent: None,
+            }
+        }
+    }
+
+    impl<'f> Drop for FuncScope<'f> {
+        fn drop(&mut self) {
+            // The default Drop impl will drop recursively, which will overflow the stack
+            let mut scopes = vec![];
+            fn drop_scope<'f>(scope: &mut FuncScope<'f>, scopes: &mut Vec<Arc<FuncScope<'f>>>) {
+                let map = mem::take(&mut scope.funcs).into_funcmap();
+                if let Some(parent) = scope.parent.take() {
+                    if Arc::strong_count(&parent) <= 1 {
+                        scopes.push(parent);
+                    }
+                }
+                for mut f in map.into_values() {
+                    if let Some(f) = f.as_mut().and_then(Arc::get_mut) {
+                        if let Some(s) = f._arg_def_scope.take() {
+                            if Arc::strong_count(&s) <= 1 {
+                                scopes.push(s)
+                            }
+                        }
+                    }
+                }
+            }
+
+            drop_scope(self, &mut scopes);
+            while let Some(mut scope) = scopes.pop() {
+                if let Some(scope) = Arc::get_mut(&mut scope) {
+                    drop_scope(scope, &mut scopes);
+                };
             }
         }
     }
