@@ -607,6 +607,9 @@ mod ast_eval_test {
         [foreach_1, "foreach .[] as $item (0; . + $item; [$item, . * 2])", "[1,2,3]", ["[1,2]", "[2,6]","[3,12]"]]
 
         [tail_recursion, "def a($x): if $x > 0 then a($x-1) else empty end; a(3000)", []]
+
+        // builtins
+        [range, "range(1,2;3,4)", ["1","2","1","2","3","2","2","3"]]
     ];
 
     ast_eval_tests![

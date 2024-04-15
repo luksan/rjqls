@@ -14,9 +14,10 @@ pub struct Generator<'e> {
 }
 
 pub enum GeneratorItem<'e> {
-    Iter(Box<dyn Iterator<Item = ResVal> + 'e>),
+    Iter(BoxResValIter<'e>),
     Accept(Option<Box<Acceptor<'e>>>),
 }
+
 impl<'e> From<GeneratorItem<'e>> for Generator<'e> {
     fn from(value: GeneratorItem<'e>) -> Self {
         Self {
@@ -27,6 +28,7 @@ impl<'e> From<GeneratorItem<'e>> for Generator<'e> {
 }
 
 pub type ResVal = Result<Value, EvalError>;
+type BoxResValIter<'e> = Box<dyn Iterator<Item = ResVal> + 'e>;
 
 impl Default for Generator<'_> {
     fn default() -> Self {
@@ -72,6 +74,28 @@ impl<'e> Generator<'e> {
     pub fn chain_res(self, next: Result<Self, EvalError>) -> Self {
         let next = next.unwrap_or_else(|err| Self::from_iter(iter::once(Err(err))));
         self.chain_gen(next)
+    }
+
+    pub fn map_gen(self, mut f: impl FnMut(Value) -> ResVal + 'e) -> Self {
+        Self::from_iter(self.map(move |resval| if let Ok(val) = resval { f(val) } else { resval }))
+    }
+
+    pub fn restrict<F, FE, E>(self, mut f: F, mut err: FE) -> Self
+    where
+        F: FnMut(&Value) -> bool + 'e,
+        FE: FnMut(Value) -> E + 'e,
+        E: Into<EvalError>,
+    {
+        Self::from_iter(self.map(move |resval| match resval {
+            Ok(val) => {
+                if !f(&val) {
+                    Err(err(val).into())
+                } else {
+                    Ok(val)
+                }
+            }
+            err => err,
+        }))
     }
 }
 
@@ -142,5 +166,100 @@ impl From<ResVal> for Generator<'_> {
 impl From<Vec<ResVal>> for Generator<'_> {
     fn from(value: Vec<ResVal>) -> Self {
         Generator::from_iter(value)
+    }
+}
+
+/// Collects generator output into a Vec and then loops the result
+///
+/// Returns None when the cycle restarts
+#[derive(Debug)]
+pub struct GenCycle<'e> {
+    gen: Generator<'e>,
+    values: Vec<Value>,
+    pos: usize,
+}
+
+impl<'e> GenCycle<'e> {
+    pub fn new(gen: Generator<'e>) -> Self {
+        Self {
+            gen,
+            values: vec![],
+            pos: 0,
+        }
+    }
+}
+
+impl<'e> Iterator for GenCycle<'e> {
+    type Item = ResVal;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(next) = self.gen.next() {
+            match &next {
+                Ok(v) => {
+                    self.values.push(v.clone());
+                    self.pos += 1;
+                }
+                Err(_) => {
+                    // Fuse on error
+                    self.values = Vec::new();
+                }
+            }
+            Some(next)
+        } else if self.pos >= self.values.len() {
+            self.pos = 0;
+            None
+        } else {
+            let ret = self.values[self.pos].clone();
+            self.pos += 1;
+            Some(Ok(ret))
+        }
+    }
+}
+
+/// A generator for generators
+pub struct GenGen<'e, G> {
+    gens: G,
+    func: Box<dyn FnMut(&mut G) -> Option<Result<Generator<'e>, EvalError>>>,
+    curr: Generator<'e>,
+    fused: bool,
+}
+
+impl<'e, G> GenGen<'e, G> {
+    pub fn new(
+        gens: G,
+        func: impl FnMut(&mut G) -> Option<Result<Generator<'e>, EvalError>> + 'static,
+    ) -> Self {
+        Self {
+            gens,
+            func: Box::new(func),
+            curr: Generator::empty(),
+            fused: false,
+        }
+    }
+}
+
+impl<'e, G> Iterator for GenGen<'e, G> {
+    type Item = ResVal;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.fused {
+            return None;
+        }
+        if let Some(n) = self.curr.next() {
+            return Some(n);
+        }
+
+        match (self.func)(&mut self.gens) {
+            Some(Ok(gen)) => self.curr = gen,
+            None => {
+                self.fused;
+                return None;
+            }
+            Some(Err(e)) => {
+                self.fused = true;
+                return Some(Err(e));
+            }
+        }
+        self.next()
     }
 }

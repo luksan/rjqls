@@ -348,6 +348,12 @@ impl From<i32> for ArcValue {
     }
 }
 
+impl From<i64> for ArcValue {
+    fn from(value: i64) -> Self {
+        Self::Number(ArcNum(value.into()))
+    }
+}
+
 impl From<()> for ArcValue {
     fn from(_: ()) -> Self {
         Self::Null
