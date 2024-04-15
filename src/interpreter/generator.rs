@@ -89,6 +89,10 @@ impl Iterator for Generator<'_> {
             match &mut self.item {
                 GeneratorItem::Iter(src) => {
                     if let Some(n) = src.next() {
+                        if n.is_err() {
+                            // stop iterating on error
+                            *self = Self::empty();
+                        }
                         return Some(n);
                     }
                     self.item = self.chain.pop_front()?;

@@ -678,9 +678,8 @@ mod ast_eval_test {
         let eval = ExprEval::new(scope, Value::Null, var_scope);
         let ast = parse_program(filter, &mut test_src_reader()).unwrap();
         let res = ast.accept(&eval).unwrap().collect::<Vec<_>>();
+        assert_eq!(res.len(), 2);
         assert!(res[0].is_ok());
         assert!(res[1].is_err());
-        assert!(res[2].is_ok());
-        assert!(res[3].is_err());
     }
 }
