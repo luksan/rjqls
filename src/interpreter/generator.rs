@@ -169,6 +169,18 @@ impl From<Vec<ResVal>> for Generator<'_> {
     }
 }
 
+impl From<EvalError> for Generator<'_> {
+    fn from(value: EvalError) -> Self {
+        Self::from_iter(iter::once(Err(value)))
+    }
+}
+
+impl From<anyhow::Error> for Generator<'_> {
+    fn from(value: anyhow::Error) -> Self {
+        EvalError::Anyhow(value).into()
+    }
+}
+
 /// Collects generator output into a Vec and then loops the result
 ///
 /// Returns None when the cycle restarts
