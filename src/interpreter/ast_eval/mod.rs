@@ -439,12 +439,13 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         init: &'e AstNode,
         update: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
+        // reduce input as $var (init; update)
         let input = input_expr.accept(self);
         let init = init.accept(self).next()??;
         let mut update_eval = self.clone_with_input(init);
         for v in input {
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
-            update_eval.input = update.accept(&update_eval).next()??;
+            update_eval.input = update.accept(&update_eval).last()??;
         }
         update_eval.input.into()
     }
