@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
-use crate::interpreter::generator::Generator;
+use crate::interpreter::generator::{Generator, ResVal};
 use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, ExprVisitor, FuncDef, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
@@ -27,7 +27,7 @@ pub enum EvalError {
 #[macro_export]
 macro_rules! bail {
     ($($args:tt),*) => {
-        return Err(EvalError::Anyhow(anyhow::anyhow!($($args),*)))
+        return EvalError::Anyhow(anyhow::anyhow!($($args),*)).into()
     };
 }
 
@@ -96,7 +96,7 @@ impl<'f> ExprEval<'f> {
     }
 
     pub fn visit(&self, ast: &'f AstNode) -> Result<Vec<Value>> {
-        Ok(ast.accept(self)?.collect::<CollectVecResult>()?)
+        Ok(ast.accept(self).collect::<CollectVecResult>()?)
     }
 
     pub fn visit_with_input(&self, ast: &'f AstNode, input: Value) -> Result<Vec<Value>> {
@@ -143,24 +143,8 @@ impl<'f> ExprEval<'f> {
     }
 }
 
-pub type ExprValue<'e> = Generator<'e>;
-pub type ExprResult<'e> = Result<ExprValue<'e>, EvalError>;
-pub type EvalVisitorRet<'e> = Result<Generator<'e>, EvalError>;
+pub type EvalVisitorRet<'e> = Generator<'e>;
 type CollectVecResult = Result<Vec<Value>, EvalError>;
-
-fn expr_val_from_value(val: Value) -> EvalVisitorRet<'static> {
-    Ok(val.into())
-}
-
-macro_rules! next_or_empty {
-    ($e:expr) => {
-        if let Some(v) = $e.next() {
-            v
-        } else {
-            return Ok(Generator::empty());
-        }
-    };
-}
 
 impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     fn default(&self) -> EvalVisitorRet<'e> {
@@ -168,7 +152,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_alternative(&self, lhs: &'e AstNode, defaults: &'e AstNode) -> EvalVisitorRet<'e> {
-        let lhs = lhs.accept(self)?;
+        let lhs = lhs.accept(self);
         let mut ret = vec![];
         for v in lhs {
             let v = v?;
@@ -179,31 +163,31 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         if ret.is_empty() {
             return defaults.accept(self);
         }
-        Ok(Generator::from_iter(ret))
+        Generator::from_iter(ret)
     }
 
     fn visit_array(&self, elements: &'e [AstNode]) -> EvalVisitorRet<'e> {
         let mut ret = Generator::empty();
         for e in elements {
-            let v = e.accept(self)?;
+            let v = e.accept(self);
             ret = ret.chain_gen(v.into_iter());
         }
         // TODO: build array value with a closure
-        Ok(Value::from(ret.collect::<CollectVecResult>()?).into())
+        Value::from(ret.collect::<CollectVecResult>()?).into()
     }
 
     fn visit_bind_vars(&self, vals: &'e Ast, vars: &'e Ast, rhs: &'e Ast) -> EvalVisitorRet<'e> {
         let mut ret = Generator::empty();
-        for v in vals.accept(self)? {
+        for v in vals.accept(self) {
             let new_scope = BindVars::bind(&v?, vars, &self.var_scope)?;
             let eval = self.clone_with_var_scope(new_scope);
-            ret = ret.chain_gen(rhs.accept(&eval)?);
+            ret = ret.chain_gen(rhs.accept(&eval));
         }
-        Ok(ret)
+        ret
     }
 
     fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> EvalVisitorRet<'e> {
-        let lhs = lhs.accept(self)?;
+        let lhs = lhs.accept(self);
         let mut ret = Vec::new(); // TODO generator
         for l in lhs {
             let l = &l?;
@@ -219,7 +203,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 }
                 _ => {} // check rhs
             }
-            let rhs = rhs.accept(self)?;
+            let rhs = rhs.accept(self);
             for r in rhs {
                 let r = &r?;
 
@@ -246,7 +230,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 ret.push(r.map_err(|e| e.into()));
             }
         }
-        Ok(Generator::from_iter(ret))
+        Generator::from_iter(ret)
     }
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> EvalVisitorRet<'e> {
@@ -266,16 +250,16 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 bound_func.function.var_scope.clone(),
             );
             // bound_func.function.filter.accept(&eval)
-            Ok(Generator::from_accept(eval, bound_func.function.filter))
+            Generator::from_accept(eval, bound_func.function.filter)
         } else {
-            Ok(self.get_builtin(name, args)?)
+            self.get_builtin(name, args) // TODO: rename to call_builtin()
         }
     }
 
     fn visit_comma(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> EvalVisitorRet<'e> {
-        let lhs = lhs.accept(self)?;
+        let lhs = lhs.accept(self);
         let rhs = rhs.accept(self);
-        Ok(lhs.chain_res(rhs))
+        lhs.chain_gen(rhs)
     }
 
     fn visit_func_scope(&self, funcs: &'e [FuncDef], rhs: &'e AstNode) -> EvalVisitorRet<'e> {
@@ -289,11 +273,11 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_dot(&self) -> EvalVisitorRet<'e> {
-        Ok(self.input.clone().into())
+        self.input.clone().into()
     }
 
     fn visit_ident(&self, ident: &str) -> EvalVisitorRet<'e> {
-        Ok(Value::from(ident).into())
+        Value::from(ident).into()
     }
 
     fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> EvalVisitorRet<'e> {
@@ -305,19 +289,19 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             branches: &'g [AstNode],
         ) -> EvalVisitorRet<'g> {
             if cond.is_empty() {
-                ret = ret.chain_gen(branches[0].accept(this)?);
-                return Ok(ret);
+                ret = ret.chain_gen(branches[0].accept(this));
+                return ret;
             }
-            let vals = cond[0].accept(this)?;
+            let vals = cond[0].accept(this);
             for v in vals {
                 let v = v?;
                 if v.is_truthy() {
-                    ret = ret.chain_gen(branches[0].accept(this)?);
+                    ret = ret.chain_gen(branches[0].accept(this));
                 } else {
-                    ret = check_remaining(this, ret, &cond[1..], &branches[1..])?;
+                    ret = check_remaining(this, ret, &cond[1..], &branches[1..]);
                 }
             }
-            Ok(ret)
+            ret
         }
         check_remaining(self, ret, cond, branches)
     }
@@ -326,19 +310,19 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> EvalVisitorRet<'e> {
         let e = expr
             .accept(self)
-            .with_context(|| format!("Eval of expr for indexing failed {expr:?}"))?;
+            .with_context(|| format!("Eval of expr for indexing failed {expr:?}"));
         let Some(idx) = idx else {
             // iterate all values
             let mut ret = Vec::new();
             for v in e {
                 ret.extend(v?.iterate()?.cloned().map(Ok));
             }
-            return Ok(ret.into());
+            return ret.into();
         };
         let mut ret = Vec::new();
         for v in e {
             let v = &v?;
-            let idx = idx.accept(self).context("Index failed to evaluate")?;
+            let idx = idx.accept(self).context("Index failed to evaluate");
             for i in idx {
                 let i = &i?;
                 let val = v
@@ -348,34 +332,34 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 ret.push(val);
             }
         }
-        Ok(ret.into())
+        ret.into()
     }
 
     fn visit_literal(&self, lit: &Value) -> EvalVisitorRet<'e> {
-        Ok(lit.clone().into())
+        lit.clone().into()
     }
 
     fn visit_object(&self, entries: &'e [ObjectEntry]) -> EvalVisitorRet<'e> {
         let visit_obj_entry = |e: &'e ObjectEntry| -> EvalVisitorRet<'e> {
             let (key, value) = (&e.key, &e.value);
-            let mut key_gen = key.accept(self)?;
-            let val = value.accept(self)?;
-            let key = next_or_empty!(key_gen);
+            let mut key_gen = key.accept(self);
+            let val = value.accept(self);
+            let key = key_gen.next()?;
             let mut ret = vec![key];
             ret.extend(val);
-            Ok(ret.into())
+            ret.into()
         };
 
         let mut objects: Vec<Map> = vec![Map::default()];
         for e in entries {
-            let mut keyvals = visit_obj_entry(e)?;
-            let key = next_or_empty!(keyvals)?;
+            let mut keyvals = visit_obj_entry(e);
+            let key = keyvals.next()??;
             let key = key.as_str().context("Object key must be a string")?;
             let mut values = keyvals;
 
             let obj_cnt = objects.len();
 
-            let mut val = next_or_empty!(values)?;
+            let mut val = values.next()??;
             let mut obj_slice = &mut objects[0..];
             loop {
                 for o in obj_slice {
@@ -390,15 +374,15 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 obj_slice = &mut objects[obj_len..];
             }
         }
-        Ok(objects
+        objects
             .into_iter()
             .map(|m| Ok(Value::from(m)))
             .collect::<Vec<_>>()
-            .into())
+            .into()
     }
 
     fn visit_break(&self, name: &'e BreakLabel) -> EvalVisitorRet<'e> {
-        Ok(Generator::from_break(name.clone()))
+        Generator::from_break(name.clone())
     }
 
     fn visit_labeled_pipe(
@@ -407,29 +391,25 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         lhs: &'e AstNode,
         rhs: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
-        let lhs = lhs.accept(self)?;
+        let lhs = lhs.accept(self);
         let mut ret = Generator::empty();
         let mut rhs_eval = self.clone();
         for value in lhs {
             rhs_eval.input = value?;
-            match rhs.accept(&rhs_eval) {
-                Ok(gen) => ret = ret.chain_break(gen, label.clone()),
-                Err(EvalError::Break(lbl)) if &lbl == label => break,
-                err => return err,
-            }
+            ret = ret.chain_break(rhs.accept(&rhs_eval), label.clone());
         }
-        Ok(ret)
+        ret
     }
 
     fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> EvalVisitorRet<'e> {
-        let lhs = lhs.accept(self)?;
+        let lhs = lhs.accept(self);
         let mut ret = Generator::empty();
         let mut rhs_eval = self.clone();
         for value in lhs {
             rhs_eval.input = value?;
-            ret = ret.chain_gen(rhs.accept(&rhs_eval)?);
+            ret = ret.chain_gen(rhs.accept(&rhs_eval));
         }
-        Ok(ret)
+        ret
     }
 
     fn visit_foreach(
@@ -440,17 +420,16 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         update: &'e AstNode,
         extract: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
-        let input = input.accept(self)?;
-        let init = next_or_empty!(init.accept(self)?)?;
+        let init = init.accept(self).next()??;
         let mut update_eval = self.clone_with_input(init);
         let mut ret = Generator::empty();
-        for v in input {
+        for v in input.accept(self) {
             // FIXME: this shouldn't consume all input if update or extract "break"s
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
-            update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
-            ret = ret.chain_gen(extract.accept(&update_eval)?);
+            update_eval.input = update.accept(&update_eval).next()??;
+            ret = ret.chain_gen(extract.accept(&update_eval));
         }
-        Ok(ret)
+        ret
     }
 
     fn visit_reduce(
@@ -460,14 +439,14 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         init: &'e AstNode,
         update: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
-        let input = input_expr.accept(self)?;
-        let init = next_or_empty!(init.accept(self)?)?;
+        let input = input_expr.accept(self);
+        let init = init.accept(self).next()??;
         let mut update_eval = self.clone_with_input(init);
         for v in input {
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
-            update_eval.input = update.accept(&update_eval)?.next().unwrap()?;
+            update_eval.input = update.accept(&update_eval).next()??;
         }
-        Ok(update_eval.input.into())
+        update_eval.input.into()
     }
 
     fn visit_scope(&self, inner: &'e AstNode) -> EvalVisitorRet<'e> {
@@ -480,37 +459,37 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         start: Option<&'e AstNode>,
         end: Option<&'e AstNode>,
     ) -> EvalVisitorRet<'e> {
-        let val = expr.accept(self)?;
+        let val = expr.accept(self);
         let mut ret = vec![];
         // TODO: lazy eval
         for v in val {
             let v = v?;
             let start = if let Some(start) = start {
-                start.accept(self)?
+                start.accept(self)
             } else {
-                expr_val_from_value(Value::from(0))?
+                Value::from(0).into()
             };
             for s in start {
                 let s = s?;
                 let end = if let Some(end) = end {
-                    end.accept(self)?
+                    end.accept(self)
                 } else {
-                    expr_val_from_value(Value::from(v.length()?))?
+                    Value::from(v.length()?).into()
                 };
                 for e in end {
                     ret.push(v.slice(&s, &e?).map_err(|e| e.into()));
                 }
             }
         }
-        Ok(Generator::from_iter(ret))
+        Generator::from_iter(ret)
     }
 
     fn visit_string_interp(&self, parts: &'e [AstNode]) -> EvalVisitorRet<'e> {
         let mut ret: Vec<String> = vec!["".to_owned()];
         for part in parts {
-            let values = part.accept(self)?.collect::<CollectVecResult>()?;
+            let values = part.accept(self).collect::<CollectVecResult>()?;
             if values.is_empty() {
-                return Ok(Generator::empty());
+                return Generator::empty();
             };
             let val_cnt = values.len();
             let prefix_len = ret.len();
@@ -534,7 +513,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             }
         }
         let ret = ret.into_iter().map(|s| Ok(s.into()));
-        Ok(Generator::from_iter(ret))
+        Generator::from_iter(ret)
     }
 
     fn visit_try_catch(
@@ -542,23 +521,46 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         try_expr: &'e AstNode,
         catch_expr: Option<&'e AstNode>,
     ) -> EvalVisitorRet<'e> {
-        let maybe = try_expr.accept(self);
-        match (catch_expr, maybe) {
-            (Some(catch_expr), Err(e)) => {
+        let try_gen = try_expr.accept(self);
+        struct TryCatch<'e> {
+            try_gen: Generator<'e>,
+            catch_gen: Option<Generator<'e>>,
+            catch_expr: Option<&'e AstNode>,
+            eval: ExprEval<'e>,
+        }
+        impl<'e> Iterator for TryCatch<'e> {
+            type Item = ResVal;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if let Some(catch) = self.catch_gen.as_mut() {
+                    return catch.next();
+                }
+                let t = self.try_gen.next();
+                let Some(Err(e)) = t else { return t };
+                let Some(catch_expr) = self.catch_expr.take() else {
+                    return None;
+                };
                 let val = match e {
                     EvalError::Value(v) => v,
                     // This is how jq does it, but maybe try/catch shouldn't affect break
                     EvalError::Break(label) => label.into(),
                     EvalError::Anyhow(a) => a.to_string().into(),
                 };
-                catch_expr.accept(&self.clone_with_input(val))
+                self.eval.input = val;
+                self.try_gen = catch_expr.accept(&self.eval);
+                self.next()
             }
-            (_, m) => m,
         }
+        Generator::from_iter(TryCatch {
+            try_gen,
+            catch_gen: None,
+            catch_expr,
+            eval: self.clone(),
+        })
     }
 
     fn visit_variable(&self, name: &str) -> EvalVisitorRet<'e> {
-        Ok(self.get_variable(name)?.into())
+        self.get_variable(name)?.into()
     }
 }
 
@@ -680,7 +682,7 @@ mod ast_eval_test {
         let var_scope = VarScope::new();
         let eval = ExprEval::new(scope, Value::Null, var_scope);
         let ast = parse_program(filter, &mut test_src_reader()).unwrap();
-        let res = ast.accept(&eval).unwrap().collect::<Vec<_>>();
+        let res = ast.accept(&eval).collect::<Vec<_>>();
         assert_eq!(res.len(), 2);
         assert!(res[0].is_ok());
         assert!(res[1].is_err());

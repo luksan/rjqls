@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
+use std::convert::Infallible;
 use std::fmt::{Debug, Formatter};
 use std::iter;
+use std::ops::FromResidual;
 
 use anyhow::Result;
 
@@ -11,6 +13,7 @@ use crate::value::Value;
 pub struct Generator<'e> {
     item: GeneratorItem<'e>,
     chain: VecDeque<GeneratorItem<'e>>,
+    err_ctx: Option<Box<dyn Fn() -> String + 'e>>,
 }
 
 pub enum GeneratorItem<'e> {
@@ -23,6 +26,7 @@ impl<'e> From<GeneratorItem<'e>> for Generator<'e> {
         Self {
             item: value,
             chain: Default::default(),
+            err_ctx: None,
         }
     }
 }
@@ -35,6 +39,7 @@ impl Default for Generator<'_> {
         Self {
             item: GeneratorItem::Iter(Box::new(iter::empty())),
             chain: Default::default(),
+            err_ctx: None,
         }
     }
 }
@@ -54,6 +59,16 @@ impl<'e> Generator<'e> {
 
     pub fn from_accept(eval: ExprEval<'e>, ast: &'e AstNode) -> Self {
         GeneratorItem::Accept(Some(Box::new(Acceptor { eval, ast }))).into()
+    }
+
+    pub fn context(mut self, err_ctx: &'e str) -> Self {
+        self.err_ctx = Some(Box::new(move || format!("{err_ctx}")));
+        self
+    }
+
+    pub fn with_context(mut self, ctx: impl Fn() -> String + 'e) -> Self {
+        self.err_ctx = Some(Box::new(ctx));
+        self
     }
 
     #[must_use]
@@ -131,6 +146,21 @@ impl Iterator for Generator<'_> {
     }
 }
 
+impl<'e, E: Into<EvalError>> FromResidual<Result<Infallible, E>> for Generator<'e> {
+    fn from_residual(residual: Result<Infallible, E>) -> Self {
+        match residual {
+            Err(err) => Err::<Value, EvalError>(err.into()).into(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<T> FromResidual<Option<T>> for Generator<'_> {
+    fn from_residual(_residual: Option<T>) -> Self {
+        Generator::empty()
+    }
+}
+
 pub struct Acceptor<'e> {
     eval: ExprEval<'e>,
     ast: &'e AstNode,
@@ -157,12 +187,6 @@ impl From<Value> for Generator<'_> {
     }
 }
 
-impl From<ResVal> for Generator<'_> {
-    fn from(value: ResVal) -> Self {
-        Generator::from_iter(iter::once(value))
-    }
-}
-
 impl From<Vec<ResVal>> for Generator<'_> {
     fn from(value: Vec<ResVal>) -> Self {
         Generator::from_iter(value)
@@ -178,6 +202,15 @@ impl From<EvalError> for Generator<'_> {
 impl From<anyhow::Error> for Generator<'_> {
     fn from(value: anyhow::Error) -> Self {
         EvalError::Anyhow(value).into()
+    }
+}
+
+impl<E: Into<EvalError>> From<Result<Value, E>> for Generator<'_> {
+    fn from(value: Result<Value, E>) -> Self {
+        match value {
+            Ok(val) => val.into(),
+            Err(e) => Generator::from(e.into()),
+        }
     }
 }
 
@@ -317,6 +350,7 @@ pub struct GenGen<'e, G> {
 }
 
 impl<'e, G> GenGen<'e, G> {
+    #[allow(dead_code)]
     pub fn new(
         gens: G,
         func: impl FnMut(&mut G) -> Option<Result<Generator<'e>, EvalError>> + 'static,

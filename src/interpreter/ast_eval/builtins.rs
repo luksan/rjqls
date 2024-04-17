@@ -5,17 +5,6 @@ use crate::interpreter::generator::{CrossProd, GenCycle};
 
 use super::*;
 
-macro_rules! ret_some_err {
-    ($opt_res:expr) => {{
-        match $opt_res {
-            None => return None,
-
-            Some(Err(e)) => return Some(Err(e)),
-            Some(Ok(v)) => v,
-        }
-    }};
-}
-
 impl<'f> ExprEval<'f> {
     pub(super) fn get_builtin<'expr>(
         &self,
@@ -32,28 +21,26 @@ impl<'f> ExprEval<'f> {
                 for v in self.input.iterate()? {
                     sum = sum.add(v)?;
                 }
-                expr_val_from_value(sum)
+                sum.into()
             }
-            ("empty", 0) => Ok(Default::default()),
-            ("error", 0) => Err(EvalError::Value(self.input.clone())),
+            ("empty", 0) => Default::default(),
+            ("error", 0) => EvalError::Value(self.input.clone()).into(),
             ("error", 1) => {
-                let mut arg = args[0].accept(self)?;
-                let Some(val) = arg.next() else {
-                    return Ok(Generator::empty());
-                };
-                Err(EvalError::Value(val?))
+                let mut arg = args[0].accept(self);
+                EvalError::Value(arg.next()??).into()
             }
             ("explode", 0) => {
                 let input = self
                     .input
                     .as_str()
                     .context("explode input must be a string")?;
-                expr_val_from_value(Value::from(
+                Value::from(
                     input
                         .chars()
                         .map(|c| Value::from(c as usize))
                         .collect::<Vec<_>>(),
-                ))
+                )
+                .into()
             }
             ("floor", 0) => math::floor(&self.input),
             ("implode", 0) => {
@@ -61,7 +48,7 @@ impl<'f> ExprEval<'f> {
                     .input
                     .as_array()
                     .context("implode input must be an array")?;
-                expr_val_from_value(Value::from(
+                Value::from(
                     input
                         .iter()
                         .map(|c| {
@@ -70,10 +57,11 @@ impl<'f> ExprEval<'f> {
                                 .and_then(|i| char::from_u32(i as _).context("Invalid codepoint"))
                         })
                         .collect::<Result<String>>()?,
-                ))
+                )
+                .into()
             }
-            ("length", 0) => expr_val_from_value(self.input.length()?),
-            ("not", 0) => expr_val_from_value((!self.input.is_truthy()).into()),
+            ("length", 0) => self.input.length().into(),
+            ("not", 0) => Value::from(!self.input.is_truthy()).into(),
 
             // Regex
             ("_match_impl", 3) => {
@@ -81,25 +69,25 @@ impl<'f> ExprEval<'f> {
                     unreachable!()
                 };
                 let mut ret = vec![];
-                for regex in regex.accept(self)? {
+                for regex in regex.accept(self) {
                     let regex = regex?; // TODO: push the error?
-                    for mods in mods.accept(self)? {
+                    for mods in mods.accept(self) {
                         let mods = mods?;
-                        for testmode in testmode.accept(self)? {
+                        for testmode in testmode.accept(self) {
                             let caps = regex::f_match(&self.input, &regex, &mods, &testmode?)
                                 .map_err(|e| e.into());
                             ret.push(caps);
                         }
                     }
                 }
-                Ok(Generator::from_iter(ret))
+                Generator::from_iter(ret)
             }
             ("range", 2) => {
-                let start = args[0].accept(self)?.restrict(
+                let start = args[0].accept(self).restrict(
                     |val| val.as_bigint().is_some(),
                     |_| anyhow!("Range bounds must be numeric"),
                 );
-                let end = GenCycle::new(args[1].accept(self)?.restrict(
+                let end = GenCycle::new(args[1].accept(self).restrict(
                     |val| val.as_bigint().is_some(),
                     |_| anyhow!("Range bounds must be numeric"),
                 ));
@@ -111,27 +99,28 @@ impl<'f> ExprEval<'f> {
                     )))
                 });
 
-                Ok(Generator::from_iter(g))
+                Generator::from_iter(g)
             }
             ("split", 1) => {
                 let input = self
                     .input
                     .as_str()
                     .context("split input must be a string")?;
-                let sep_str = args[0].accept(self)?.next().context("Empty separator")??;
+                let sep_str = args[0].accept(self).next().context("Empty separator")??;
                 let sep = sep_str
                     .as_str()
                     .context("split separator must be a string")?;
                 // TODO: less copying of strings
-                expr_val_from_value(Value::from(
-                    input.split(sep).map(Value::from).collect::<Vec<_>>(),
-                ))
+                Value::from(input.split(sep).map(Value::from).collect::<Vec<_>>()).into()
             }
-            ("tostring", 0) => expr_val_from_value(match self.input {
-                // JSON encode input value
-                Value::String(_) => self.input.clone(),
-                _ => Value::from(format!("{}", self.input)),
-            }),
+            ("tostring", 0) => {
+                match self.input {
+                    // JSON encode input value
+                    Value::String(_) => self.input.clone(),
+                    _ => Value::from(format!("{}", self.input)),
+                }
+                .into()
+            }
             ("type", 0) => {
                 let typ = match self.input {
                     Value::Array(_) => "array",
@@ -141,12 +130,12 @@ impl<'f> ExprEval<'f> {
                     Value::Object(_) => "object",
                     Value::String(_) => "string",
                 };
-                expr_val_from_value(Value::from(typ))
+                Value::from(typ).into()
             }
 
             ("_strindices", 1) => {
                 let input = self.input.as_str().context("input  must be a string")?;
-                let needle = args[0].accept(self)?.next().unwrap()?;
+                let needle = args[0].accept(self).next()??;
                 let needle = needle.as_str().context("needle must be a string")?;
                 let mut ret = vec![];
                 let mut pos = 0;
@@ -155,7 +144,7 @@ impl<'f> ExprEval<'f> {
                     ret.push(Value::from(i + pos));
                     pos += i + 1;
                 }
-                expr_val_from_value(Value::from(ret))
+                Value::from(ret).into()
             }
 
             (_, len) => bail!("Function {name}/{len} not found."),
