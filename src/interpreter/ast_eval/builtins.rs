@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 
 use crate::bail;
-use crate::interpreter::generator::{GenCycle, GenGen};
+use crate::interpreter::generator::{CrossProd, GenCycle};
 
 use super::*;
 
@@ -103,29 +103,14 @@ impl<'f> ExprEval<'f> {
                     |val| val.as_bigint().is_some(),
                     |_| anyhow!("Range bounds must be numeric"),
                 ));
-                let mut start_val = Value::Null;
-                let g = GenGen::new((start, end), move |gens| -> Option<_> {
-                    let mut retry_once = 1;
-                    while retry_once >= 0 {
-                        if start_val == Value::Null {
-                            start_val = ret_some_err!(gens.0.next());
-                        }
-                        match gens.1.next() {
-                            Some(Ok(val)) => {
-                                return Some(Ok(Generator::from_iter(
-                                    (start_val.as_bigint().unwrap()..val.as_bigint().unwrap())
-                                        .map(|v| Ok(v.into())),
-                                )))
-                            }
-                            Some(Err(err)) => return Some(Err(err)),
-                            None => {
-                                start_val = Value::Null;
-                                retry_once -= 1;
-                            }
-                        }
-                    }
-                    None
+
+                let g = CrossProd::new([Box::new(start), Box::new(end)], |[start, end]| {
+                    Some(Ok(Generator::from_iter(
+                        (start.as_bigint().unwrap()..end.as_bigint().unwrap())
+                            .map(|v| Ok(v.into())),
+                    )))
                 });
+
                 Ok(Generator::from_iter(g))
             }
             ("split", 1) => {

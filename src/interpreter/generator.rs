@@ -183,7 +183,7 @@ impl From<anyhow::Error> for Generator<'_> {
 
 /// Collects generator output into a Vec and then loops the result
 ///
-/// Returns None when the cycle restarts
+/// Returns None when the cycle restarts. Don't use if the generator has side effects
 #[derive(Debug)]
 pub struct GenCycle<'e> {
     gen: Generator<'e>,
@@ -224,6 +224,86 @@ impl<'e> Iterator for GenCycle<'e> {
             let ret = self.values[self.pos].clone();
             self.pos += 1;
             Some(Ok(ret))
+        }
+    }
+}
+
+pub struct CrossProd<'e, const N: usize> {
+    gens: [BoxResValIter<'e>; N],
+    func: Box<dyn FnMut(&[Value; N]) -> Option<Result<Generator<'e>, EvalError>>>,
+    values: [Value; N],
+    update_pos: usize,
+    curr: Generator<'e>,
+    ended: bool,
+}
+
+impl<'e, const N: usize> CrossProd<'e, N> {
+    pub fn new(
+        gens: [BoxResValIter<'e>; N],
+        func: impl FnMut(&[Value; N]) -> Option<Result<Generator<'e>, EvalError>> + 'static,
+    ) -> Self {
+        const NULL: Value = Value::Null;
+        Self {
+            gens,
+            func: Box::new(func),
+            values: [NULL; N],
+            update_pos: 0,
+            curr: Generator::empty(),
+            ended: false,
+        }
+    }
+}
+
+impl<'e, const N: usize> Iterator for CrossProd<'e, N> {
+    type Item = ResVal;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ended {
+            return None;
+        }
+        if let Some(v) = self.curr.next() {
+            return Some(v);
+        }
+
+        let mut pos = N - 1; // the rightmost slot is the innermost one
+        let mut retried_pos = N; // the latest pos that returned None
+        loop {
+            match self.gens[pos].next() {
+                Some(Ok(val)) => self.values[pos] = val,
+                Some(Err(err)) => {
+                    self.ended = true;
+                    return Some(Err(err));
+                }
+                None if pos == 0 || pos == retried_pos => {
+                    self.ended = true;
+                    return None;
+                }
+                None => {
+                    retried_pos = pos;
+                    self.update_pos = pos - 1; // we cycled this pos -> the next outer needs an update
+                    continue; // try to get another val
+                }
+            }
+            if pos == self.update_pos {
+                break;
+            }
+            pos -= 1;
+        }
+        self.update_pos = N - 1; // always start with updating only the rightmost slot
+
+        match (self.func)(&self.values) {
+            Some(Ok(gen)) => {
+                self.curr = gen;
+                self.next()
+            }
+            Some(Err(err)) => {
+                self.ended = true;
+                Some(Err(err))
+            }
+            None => {
+                self.ended = true;
+                None
+            }
         }
     }
 }
