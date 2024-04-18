@@ -10,7 +10,6 @@ use crate::parser::expr_ast::{AstNode, BreakLabel};
 use crate::value::Value;
 
 pub struct Generator<'e> {
-    item: GeneratorItem<'e>,
     chain: VecDeque<GeneratorItem<'e>>,
     err_ctx: Option<Box<dyn Fn() -> String + 'e>>,
 }
@@ -24,8 +23,7 @@ pub enum GeneratorItem<'e> {
 impl<'e> From<GeneratorItem<'e>> for Generator<'e> {
     fn from(value: GeneratorItem<'e>) -> Self {
         Self {
-            item: value,
-            chain: Default::default(),
+            chain: VecDeque::from([value]),
             err_ctx: None,
         }
     }
@@ -37,7 +35,6 @@ type BoxResValIter<'e> = Box<dyn Iterator<Item = ResVal> + 'e>;
 impl Default for Generator<'_> {
     fn default() -> Self {
         Self {
-            item: GeneratorItem::Once(None),
             chain: Default::default(),
             err_ctx: None,
         }
@@ -54,10 +51,7 @@ impl<'e> Generator<'e> {
     }
 
     pub fn from_resval(v: ResVal) -> Self {
-        Self {
-            item: GeneratorItem::Once(Some(v)),
-            ..Self::default()
-        }
+        GeneratorItem::Once(Some(v)).into()
     }
 
     pub fn from_break(label: BreakLabel) -> Self {
@@ -80,7 +74,6 @@ impl<'e> Generator<'e> {
 
     #[must_use]
     pub fn chain_gen(mut self, mut next: Self) -> Self {
-        self.chain.push_back(next.item);
         self.chain.append(&mut next.chain);
         self
     }
@@ -126,11 +119,12 @@ impl Iterator for Generator<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let ret = loop {
-            let val = match &mut self.item {
+            let val = match self.chain.front_mut()? {
                 GeneratorItem::Iter(src) => src.next(),
                 GeneratorItem::Once(val) => val.take(),
                 GeneratorItem::Accept(a) => {
                     let mut next = a.take().unwrap().into_iter();
+                    self.chain.pop_front();
                     next.chain.append(&mut self.chain);
                     *self = next;
                     continue;
@@ -139,7 +133,7 @@ impl Iterator for Generator<'_> {
             if let Some(val) = val {
                 break val;
             }
-            self.item = self.chain.pop_front()?;
+            self.chain.pop_front()?;
         };
         if ret.is_err() {
             // stop iterating on error
