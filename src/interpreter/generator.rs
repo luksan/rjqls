@@ -51,10 +51,6 @@ impl<'e> Generator<'e> {
         GeneratorItem::Once(Some(v)).into()
     }
 
-    pub fn from_break(label: BreakLabel) -> Self {
-        Self::from_resval(Err(EvalError::Break(label)))
-    }
-
     pub fn from_accept(eval: ExprEval<'e>, ast: &'e AstNode) -> Self {
         GeneratorItem::Accept(Some(Box::new(Acceptor { eval, ast }))).into()
     }

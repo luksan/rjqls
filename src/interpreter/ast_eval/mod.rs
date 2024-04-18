@@ -382,7 +382,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_break(&self, name: &'e BreakLabel) -> EvalVisitorRet<'e> {
-        Generator::from_break(name.clone())
+        EvalError::Break(name.clone()).into()
     }
 
     fn visit_labeled_pipe(
