@@ -6,7 +6,7 @@ use crate::interpreter::generator::{CrossProd, GenCycle};
 use super::*;
 
 impl<'f> ExprEval<'f> {
-    pub(super) fn get_builtin<'expr>(
+    pub(super) fn call_builtin<'expr>(
         &self,
         name: &str,
         args: &'expr [AstNode],

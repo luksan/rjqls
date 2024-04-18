@@ -252,7 +252,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             // bound_func.function.filter.accept(&eval)
             Generator::from_accept(eval, bound_func.function.filter)
         } else {
-            self.get_builtin(name, args) // TODO: rename to call_builtin()
+            self.call_builtin(name, args)
         }
     }
 
