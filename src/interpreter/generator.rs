@@ -103,7 +103,12 @@ impl Iterator for Generator<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let ret = loop {
             let val = match self.chain.front_mut()? {
-                GeneratorItem::Iter(src) => src.next(),
+                GeneratorItem::Iter(src) => {
+                    if let Some(v) = src.next() {
+                        break v;
+                    }
+                    None
+                }
                 GeneratorItem::Once(val) => val.take(),
                 GeneratorItem::Accept(a) => {
                     let mut next = a.take().unwrap().into_iter();
@@ -113,10 +118,10 @@ impl Iterator for Generator<'_> {
                     continue;
                 }
             };
+            self.chain.pop_front();
             if let Some(val) = val {
                 break val;
             }
-            self.chain.pop_front()?;
         };
         if ret.is_err() {
             // stop iterating on error
