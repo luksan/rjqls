@@ -11,7 +11,6 @@ use crate::value::Value;
 
 pub struct Generator<'e> {
     chain: VecDeque<GeneratorItem<'e>>,
-    err_ctx: Option<Box<dyn Fn() -> String + 'e>>,
 }
 
 pub enum GeneratorItem<'e> {
@@ -24,7 +23,6 @@ impl<'e> From<GeneratorItem<'e>> for Generator<'e> {
     fn from(value: GeneratorItem<'e>) -> Self {
         Self {
             chain: VecDeque::from([value]),
-            err_ctx: None,
         }
     }
 }
@@ -36,7 +34,6 @@ impl Default for Generator<'_> {
     fn default() -> Self {
         Self {
             chain: Default::default(),
-            err_ctx: None,
         }
     }
 }
@@ -60,16 +57,6 @@ impl<'e> Generator<'e> {
 
     pub fn from_accept(eval: ExprEval<'e>, ast: &'e AstNode) -> Self {
         GeneratorItem::Accept(Some(Box::new(Acceptor { eval, ast }))).into()
-    }
-
-    pub fn context(mut self, err_ctx: &'e str) -> Self {
-        self.err_ctx = Some(Box::new(move || format!("{err_ctx}")));
-        self
-    }
-
-    pub fn with_context(mut self, ctx: impl Fn() -> String + 'e) -> Self {
-        self.err_ctx = Some(Box::new(ctx));
-        self
     }
 
     #[must_use]

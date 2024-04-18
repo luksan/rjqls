@@ -310,7 +310,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> EvalVisitorRet<'e> {
         let e = expr
             .accept(self)
-            .with_context(|| format!("Eval of expr for indexing failed {expr:?}"));
+            .map(|r| r.with_context(|| format!("Eval of expr for indexing failed {expr:?}")));
         let Some(idx) = idx else {
             // iterate all values
             let mut ret = Vec::new();
@@ -322,9 +322,9 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut ret = Vec::new();
         for v in e {
             let v = &v?;
-            let idx = idx.accept(self).context("Index failed to evaluate");
+            let idx = idx.accept(self);
             for i in idx {
-                let i = &i?;
+                let i = &i.context("Index failed to evaluate")?;
                 let val = v
                     .index(i)
                     .with_context(|| format!("Failed to index {v} with {i}."))
