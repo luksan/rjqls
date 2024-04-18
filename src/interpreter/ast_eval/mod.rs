@@ -420,16 +420,23 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         update: &'e AstNode,
         extract: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
-        let init = init.accept(self).next()??;
-        let mut update_eval = self.clone_with_input(init);
-        let mut ret = Generator::empty();
-        for v in input.accept(self) {
-            // FIXME: this shouldn't consume all input if update or extract "break"s
-            update_eval.var_scope = self.var_scope.set_variable(var, v?);
-            update_eval.input = update.accept(&update_eval).next()??;
-            ret = ret.chain_gen(extract.accept(&update_eval));
-        }
-        ret
+        // foreach input as $var (init; update; extract)
+        let this = self.clone();
+        let g = init
+            .accept(self)
+            .map(move |init| -> Generator<'e> {
+                let mut update_eval = this.clone_with_input(init?);
+                let var_scope = this.var_scope.clone();
+                let extract = input.accept(&this).map(move |inp| -> Generator<'e> {
+                    let inp = inp?;
+                    update_eval.var_scope = var_scope.set_variable(var, inp);
+                    update_eval.input = update.accept(&update_eval).last()??;
+                    extract.accept(&update_eval)
+                });
+                Generator::from_iter(extract.flatten())
+            })
+            .flatten();
+        Generator::from_iter(g)
     }
 
     fn visit_reduce(
