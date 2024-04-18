@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::fmt::{Debug, Formatter};
-use std::iter;
 use std::ops::FromResidual;
 
 use anyhow::Result;
@@ -18,6 +17,7 @@ pub struct Generator<'e> {
 
 pub enum GeneratorItem<'e> {
     Iter(BoxResValIter<'e>),
+    Once(Option<ResVal>),
     Accept(Option<Box<Acceptor<'e>>>),
 }
 
@@ -37,7 +37,7 @@ type BoxResValIter<'e> = Box<dyn Iterator<Item = ResVal> + 'e>;
 impl Default for Generator<'_> {
     fn default() -> Self {
         Self {
-            item: GeneratorItem::Iter(Box::new(iter::empty())),
+            item: GeneratorItem::Once(None),
             chain: Default::default(),
             err_ctx: None,
         }
@@ -53,8 +53,15 @@ impl<'e> Generator<'e> {
         GeneratorItem::Iter(Box::new(i.into_iter())).into()
     }
 
+    pub fn from_resval(v: ResVal) -> Self {
+        Self {
+            item: GeneratorItem::Once(Some(v)),
+            ..Self::default()
+        }
+    }
+
     pub fn from_break(label: BreakLabel) -> Self {
-        Self::from_iter(iter::once(Err(EvalError::Break(label))))
+        Self::from_resval(Err(EvalError::Break(label)))
     }
 
     pub fn from_accept(eval: ExprEval<'e>, ast: &'e AstNode) -> Self {
@@ -83,12 +90,6 @@ impl<'e> Generator<'e> {
         self.chain_gen(Self::from_iter(next.take_while(
             move |res| !matches!(res, Err(EvalError::Break(lbl)) if &label == lbl),
         )))
-    }
-
-    #[must_use]
-    pub fn chain_res(self, next: Result<Self, EvalError>) -> Self {
-        let next = next.unwrap_or_else(|err| Self::from_iter(iter::once(Err(err))));
-        self.chain_gen(next)
     }
 
     pub fn map_gen(self, mut f: impl FnMut(Value) -> ResVal + 'e) -> Self {
@@ -124,25 +125,27 @@ impl Iterator for Generator<'_> {
     type Item = ResVal;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match &mut self.item {
-                GeneratorItem::Iter(src) => {
-                    if let Some(n) = src.next() {
-                        if n.is_err() {
-                            // stop iterating on error
-                            *self = Self::empty();
-                        }
-                        return Some(n);
-                    }
-                    self.item = self.chain.pop_front()?;
-                }
+        let ret = loop {
+            let val = match &mut self.item {
+                GeneratorItem::Iter(src) => src.next(),
+                GeneratorItem::Once(val) => val.take(),
                 GeneratorItem::Accept(a) => {
                     let mut next = a.take().unwrap().into_iter();
                     next.chain.append(&mut self.chain);
-                    *self = next
+                    *self = next;
+                    continue;
                 }
+            };
+            if let Some(val) = val {
+                break val;
             }
+            self.item = self.chain.pop_front()?;
+        };
+        if ret.is_err() {
+            // stop iterating on error
+            *self = Self::empty();
         }
+        Some(ret)
     }
 }
 
@@ -177,13 +180,13 @@ impl<'e> IntoIterator for Acceptor<'e> {
 
 impl<'e> From<Result<Generator<'e>, EvalError>> for Generator<'e> {
     fn from(gen: Result<Generator<'e>, EvalError>) -> Self {
-        gen.unwrap_or_else(|err| Generator::from_iter(iter::once(Err(err))))
+        gen.unwrap_or_else(|err| Generator::from_resval(Err(err)))
     }
 }
 
 impl From<Value> for Generator<'_> {
     fn from(value: Value) -> Self {
-        Generator::from_iter(iter::once(Ok(value)))
+        Generator::from_resval(Ok(value))
     }
 }
 
@@ -195,7 +198,7 @@ impl From<Vec<ResVal>> for Generator<'_> {
 
 impl From<EvalError> for Generator<'_> {
     fn from(value: EvalError) -> Self {
-        Self::from_iter(iter::once(Err(value)))
+        Self::from_resval(Err(value))
     }
 }
 
