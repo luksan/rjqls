@@ -4,6 +4,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::FromResidual;
 
 use anyhow::Result;
+use itertools::Itertools;
 
 use crate::interpreter::ast_eval::{EvalError, ExprEval};
 use crate::parser::expr_ast::{AstNode, BreakLabel};
@@ -70,6 +71,14 @@ impl<'e> Generator<'e> {
 
     pub fn map_gen(self, mut f: impl FnMut(Value) -> ResVal + 'e) -> Self {
         Self::from_iter(self.map(move |resval| if let Ok(val) = resval { f(val) } else { resval }))
+    }
+
+    pub fn map_flat_val<F, R>(self, f: F) -> impl Iterator<Item = ResVal> + 'e
+    where
+        F: FnMut(Value) -> R + 'e,
+        R: Iterator<Item = ResVal> + 'e,
+    {
+        self.map_ok(f).flatten_ok().map(|v| v?)
     }
 
     pub fn restrict<F, FE, E>(self, mut f: F, mut err: FE) -> Self

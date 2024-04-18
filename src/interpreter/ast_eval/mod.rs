@@ -422,20 +422,15 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     ) -> EvalVisitorRet<'e> {
         // foreach input as $var (init; update; extract)
         let this = self.clone();
-        let g = init
-            .accept(self)
-            .map(move |init| -> Generator<'e> {
-                let mut update_eval = this.clone_with_input(init?);
-                let var_scope = this.var_scope.clone();
-                let extract = input.accept(&this).map(move |inp| -> Generator<'e> {
-                    let inp = inp?;
-                    update_eval.var_scope = var_scope.set_variable(var, inp);
-                    update_eval.input = update.accept(&update_eval).last()??;
-                    extract.accept(&update_eval)
-                });
-                Generator::from_iter(extract.flatten())
+        let g = init.accept(self).map_flat_val(move |init| {
+            let mut update_eval = this.clone_with_input(init);
+            let var_scope = this.var_scope.clone();
+            input.accept(&this).map_flat_val(move |inp| {
+                update_eval.var_scope = var_scope.set_variable(var, inp);
+                update_eval.input = update.accept(&update_eval).last()??;
+                extract.accept(&update_eval)
             })
-            .flatten();
+        });
         Generator::from_iter(g)
     }
 
