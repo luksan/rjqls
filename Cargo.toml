@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.71"
 bpaf = { version = "0.9.5", features = ["color", "derive"] }
+cap-directories = "3.0.0"
+cap-std = "3.0.0"
 indexmap = { version = "2.2.5" }
 itertools = "0.12.1"
 onig = { version = "6.4.0", default-features = false }
