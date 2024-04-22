@@ -372,7 +372,7 @@ impl<'e, G> Iterator for GenGen<'e, G> {
         match (self.func)(&mut self.gens) {
             Some(Ok(gen)) => self.curr = gen,
             None => {
-                self.fused;
+                self.fused = true;
                 return None;
             }
             Some(Err(e)) => {

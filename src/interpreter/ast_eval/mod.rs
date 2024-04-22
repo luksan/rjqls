@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::fmt::Debug;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -80,19 +82,83 @@ impl<'e> VarScope<'e> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExprEval<'f> {
-    input: Value,
+pub struct ExprEval<'f, Kind = StdEval>
+where
+    Kind: EvalKind,
+{
+    eval_kind: Kind,
     func_scope: Arc<FuncScope<'f>>,
     var_scope: Arc<VarScope<'f>>,
 }
+pub trait EvalKind: Clone {
+    fn input(&self) -> &Value;
+}
 
-impl<'f> ExprEval<'f> {
-    pub fn new(func_scope: Arc<FuncScope<'f>>, input: Value, var_scope: Arc<VarScope<'f>>) -> Self {
-        Self {
-            input,
+#[derive(Debug, Clone)]
+pub struct StdEval {
+    input: Value,
+}
+
+impl EvalKind for StdEval {
+    #[inline(always)]
+    fn input(&self) -> &Value {
+        &self.input
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstEval {
+    is_const: Rc<Cell<bool>>,
+}
+
+impl EvalKind for ConstEval {
+    fn input(&self) -> &Value {
+        self.is_const.set(false);
+        &Value::Null
+    }
+}
+
+impl<'f> ExprEval<'f, StdEval> {
+    pub fn new(
+        func_scope: Arc<FuncScope<'f>>,
+        input: Value,
+        var_scope: Arc<VarScope<'f>>,
+    ) -> ExprEval<'f, StdEval> {
+        ExprEval {
+            eval_kind: StdEval { input },
             func_scope,
             var_scope,
         }
+    }
+}
+
+impl<'f> ExprEval<'f, ConstEval> {
+    pub fn const_eval(
+        expr: &'f AstNode,
+        func_scope: Arc<FuncScope<'f>>,
+        var_scope: Arc<VarScope<'f>>,
+    ) -> Option<Result<Vec<Value>, EvalError>> {
+        let eval = ExprEval {
+            eval_kind: ConstEval {
+                is_const: Rc::new(true.into()),
+            },
+            func_scope,
+            var_scope,
+        };
+        let res = expr.accept(&eval);
+        let ret = res.collect::<CollectVecResult>();
+
+        eval.eval_kind.is_const.get().then_some(ret)
+    }
+}
+
+impl<'f, Kind> ExprEval<'f, Kind>
+where
+    Kind: EvalKind,
+{
+    #[inline(always)]
+    fn input(&self) -> &Value {
+        self.eval_kind.input()
     }
 
     pub fn visit(&self, ast: &'f AstNode) -> Result<Vec<Value>> {
@@ -104,9 +170,9 @@ impl<'f> ExprEval<'f> {
         x.visit(ast)
     }
 
-    fn clone_with_input(&self, input: Value) -> Self {
-        Self {
-            input,
+    fn clone_with_input(&self, input: Value) -> ExprEval<'f, StdEval> {
+        ExprEval {
+            eval_kind: StdEval { input },
             ..self.clone()
         }
     }
@@ -146,7 +212,10 @@ impl<'f> ExprEval<'f> {
 pub type EvalVisitorRet<'e> = Generator<'e>;
 type CollectVecResult = Result<Vec<Value>, EvalError>;
 
-impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
+impl<'e, Kind> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e, Kind>
+where
+    Kind: EvalKind + 'e,
+{
     fn default(&self) -> EvalVisitorRet<'e> {
         panic!("Missing func impl in ExprVisitor for ExprEval.");
     }
@@ -235,7 +304,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
 
     fn visit_breakpoint(&self, expr: &'e Ast) -> EvalVisitorRet<'e> {
         println!("Breakpoint hit at {:?}", expr);
-        println!("Current input: {:?}", self.input);
+        println!("Current input: {:?}", self.input());
         print!("FuncScope:\n{:?}", self.func_scope.as_ref());
         println!("{:?}", self.var_scope.as_ref());
         println!("> Continuing <\n");
@@ -246,7 +315,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         if let Some(bound_func) = self.get_function(name, args) {
             let eval = ExprEval::new(
                 bound_func.func_scope,
-                self.input.clone(),
+                self.input().clone(),
                 bound_func.function.var_scope.clone(),
             );
             // bound_func.function.filter.accept(&eval)
@@ -273,7 +342,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     }
 
     fn visit_dot(&self) -> EvalVisitorRet<'e> {
-        self.input.clone().into()
+        self.input().clone().into()
     }
 
     fn visit_ident(&self, ident: &str) -> EvalVisitorRet<'e> {
@@ -282,8 +351,8 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
 
     fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> EvalVisitorRet<'e> {
         let ret = Default::default();
-        fn check_remaining<'g>(
-            this: &ExprEval<'g>,
+        fn check_remaining<'g, Kind: EvalKind + 'g>(
+            this: &ExprEval<'g, Kind>,
             mut ret: Generator<'g>,
             cond: &'g [AstNode],
             branches: &'g [AstNode],
@@ -393,9 +462,9 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     ) -> EvalVisitorRet<'e> {
         let lhs = lhs.accept(self);
         let mut ret = Generator::empty();
-        let mut rhs_eval = self.clone();
+        let mut rhs_eval = self.clone_with_input(Value::Null);
         for value in lhs {
-            rhs_eval.input = value?;
+            rhs_eval.eval_kind.input = value?;
             ret = ret.chain_break(rhs.accept(&rhs_eval), label.clone());
         }
         ret
@@ -404,9 +473,9 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
     fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> EvalVisitorRet<'e> {
         let lhs = lhs.accept(self);
         let mut ret = Generator::empty();
-        let mut rhs_eval = self.clone();
+        let mut rhs_eval = self.clone_with_input(Value::Null);
         for value in lhs {
-            rhs_eval.input = value?;
+            rhs_eval.eval_kind.input = value?;
             ret = ret.chain_gen(rhs.accept(&rhs_eval));
         }
         ret
@@ -427,7 +496,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             let var_scope = this.var_scope.clone();
             input.accept(&this).map_flat_val(move |inp| {
                 update_eval.var_scope = var_scope.set_variable(var, inp);
-                update_eval.input = update.accept(&update_eval).last()??;
+                update_eval.eval_kind.input = update.accept(&update_eval).last()??;
                 extract.accept(&update_eval)
             })
         });
@@ -447,9 +516,9 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
         let mut update_eval = self.clone_with_input(init);
         for v in input {
             update_eval.var_scope = self.var_scope.set_variable(var, v?);
-            update_eval.input = update.accept(&update_eval).last()??;
+            update_eval.eval_kind.input = update.accept(&update_eval).last()??;
         }
-        update_eval.input.into()
+        update_eval.eval_kind.input.into()
     }
 
     fn visit_scope(&self, inner: &'e AstNode) -> EvalVisitorRet<'e> {
@@ -540,16 +609,14 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
                 }
                 let t = self.try_gen.next();
                 let Some(Err(e)) = t else { return t };
-                let Some(catch_expr) = self.catch_expr.take() else {
-                    return None;
-                };
+                let catch_expr = self.catch_expr.take()?;
                 let val = match e {
                     EvalError::Value(v) => v,
                     // This is how jq does it, but maybe try/catch shouldn't affect break
                     EvalError::Break(label) => label.into(),
                     EvalError::Anyhow(a) => a.to_string().into(),
                 };
-                self.eval.input = val;
+                self.eval.eval_kind.input = val;
                 self.try_gen = catch_expr.accept(&self.eval);
                 self.next()
             }
@@ -558,7 +625,7 @@ impl<'e> ExprVisitor<'e, EvalVisitorRet<'e>> for ExprEval<'e> {
             try_gen,
             catch_gen: None,
             catch_expr,
-            eval: self.clone(),
+            eval: self.clone_with_input(Value::Null),
         })
     }
 

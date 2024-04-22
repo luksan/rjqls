@@ -5,7 +5,10 @@ use crate::interpreter::generator::{CrossProd, GenCycle};
 
 use super::*;
 
-impl<'f> ExprEval<'f> {
+impl<'f, Kind> ExprEval<'f, Kind>
+where
+    Kind: EvalKind + 'f,
+{
     pub(super) fn call_builtin<'expr>(
         &self,
         name: &str,
@@ -18,20 +21,20 @@ impl<'f> ExprEval<'f> {
         match (name, args.len()) {
             ("add", 0) => {
                 let mut sum: Value = ().into();
-                for v in self.input.iterate()? {
+                for v in self.input().iterate()? {
                     sum = sum.add(v)?;
                 }
                 sum.into()
             }
             ("empty", 0) => Default::default(),
-            ("error", 0) => EvalError::Value(self.input.clone()).into(),
+            ("error", 0) => EvalError::Value(self.input().clone()).into(),
             ("error", 1) => {
                 let mut arg = args[0].accept(self);
                 EvalError::Value(arg.next()??).into()
             }
             ("explode", 0) => {
                 let input = self
-                    .input
+                    .input()
                     .as_str()
                     .context("explode input must be a string")?;
                 Value::from(
@@ -42,10 +45,10 @@ impl<'f> ExprEval<'f> {
                 )
                 .into()
             }
-            ("floor", 0) => math::floor(&self.input),
+            ("floor", 0) => math::floor(self.input()),
             ("implode", 0) => {
                 let input = self
-                    .input
+                    .input()
                     .as_array()
                     .context("implode input must be an array")?;
                 Value::from(
@@ -60,8 +63,8 @@ impl<'f> ExprEval<'f> {
                 )
                 .into()
             }
-            ("length", 0) => self.input.length().into(),
-            ("not", 0) => Value::from(!self.input.is_truthy()).into(),
+            ("length", 0) => self.input().length().into(),
+            ("not", 0) => Value::from(!self.input().is_truthy()).into(),
 
             // Regex
             ("_match_impl", 3) => {
@@ -74,7 +77,7 @@ impl<'f> ExprEval<'f> {
                     for mods in mods.accept(self) {
                         let mods = mods?;
                         for testmode in testmode.accept(self) {
-                            let caps = regex::f_match(&self.input, &regex, &mods, &testmode?)
+                            let caps = regex::f_match(self.input(), &regex, &mods, &testmode?)
                                 .map_err(|e| e.into());
                             ret.push(caps);
                         }
@@ -103,7 +106,7 @@ impl<'f> ExprEval<'f> {
             }
             ("split", 1) => {
                 let input = self
-                    .input
+                    .input()
                     .as_str()
                     .context("split input must be a string")?;
                 let sep_str = args[0].accept(self).next().context("Empty separator")??;
@@ -114,15 +117,15 @@ impl<'f> ExprEval<'f> {
                 Value::from(input.split(sep).map(Value::from).collect::<Vec<_>>()).into()
             }
             ("tostring", 0) => {
-                match self.input {
+                match self.input() {
                     // JSON encode input value
-                    Value::String(_) => self.input.clone(),
-                    _ => Value::from(format!("{}", self.input)),
+                    Value::String(_) => self.input().clone(),
+                    _ => Value::from(format!("{}", self.input())),
                 }
                 .into()
             }
             ("type", 0) => {
-                let typ = match self.input {
+                let typ = match self.input() {
                     Value::Array(_) => "array",
                     Value::Bool(_) => "boolean",
                     Value::Number(_) => "number",
@@ -134,7 +137,7 @@ impl<'f> ExprEval<'f> {
             }
 
             ("_strindices", 1) => {
-                let input = self.input.as_str().context("input  must be a string")?;
+                let input = self.input().as_str().context("input  must be a string")?;
                 let needle = args[0].accept(self).next()??;
                 let needle = needle.as_str().context("needle must be a string")?;
                 let mut ret = vec![];
