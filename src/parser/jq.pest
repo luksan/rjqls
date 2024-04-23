@@ -8,10 +8,11 @@ escape = { "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
 
 program = _{ SOI ~ includes ~ pratt_expr ~ EOI }
 
-includes = _{ (include_directive | module_directive)* }
-include_directive = {"include"  ~ "\"" ~ inner_str ~ "\"" ~ pratt_expr? ~ ";"}
-module_directive = {"module" ~ pratt_expr ~ ";"}
-// func_def is a prefix in pratt_expr
+includes = _{ (include_directive | import_directive)* }
+import_directive = { "import" ~ "\"" ~ inner_str ~ "\"" ~ "as" ~ variable ~ pratt_expr? ~ ";" }
+include_directive = { "include"  ~ "\"" ~ inner_str ~ "\"" ~ pratt_expr? ~ ";" }
+module_directive = { "module" ~ pratt_expr ~ ";" }
+
 func_def = {
     "def" ~ ident ~
     ( "(" ~ (ident | variable) ~ (";" ~ (ident | variable))*  ~ ")" )?
