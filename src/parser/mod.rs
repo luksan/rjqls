@@ -81,15 +81,6 @@ pub struct JqModule {
     pub(crate) functions: Vec<FuncDef>,
 }
 
-/// This is used to own the Ast for builtins and other included functions
-/// that are not present in the main AST
-#[derive(Debug)]
-pub struct OwnedFunc {
-    pub name: String,
-    pub args: Vec<String>,
-    pub filter: Ast,
-}
-
 pub fn parse_module(code: &str, src_id: SrcId, src_reader: &mut dyn SrcRead) -> Result<JqModule> {
     let mut pairs = JqGrammar::parse(Rule::jq_module, code)?;
     let mut functions = include_and_import(&mut pairs, src_reader, src_id)?;
