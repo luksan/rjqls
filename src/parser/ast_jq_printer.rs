@@ -130,19 +130,20 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.puts(ident)
     }
 
-    fn visit_if_else(&self, cond: &[AstNode], branches: &[AstNode]) -> () {
+    fn visit_if_else(&self, cond: &AstNode, then: &AstNode, mut else_: &AstNode) {
         self.puts("if ");
-        cond[0].accept(self);
+        cond.accept(self);
         self.puts(" then ");
-        branches[0].accept(self);
-        for (c, b) in cond[1..].iter().zip(branches[1..].iter()) {
+        then.accept(self);
+        while let Expr::IfElse(c, b, next_else) = &*else_.expr {
             self.puts(" elif ");
             c.accept(self);
             self.puts(" then ");
             b.accept(self);
+            else_ = next_else;
         }
         self.puts(" else ");
-        branches.last().unwrap().accept(self);
+        else_.accept(self);
         self.puts(" end");
     }
 

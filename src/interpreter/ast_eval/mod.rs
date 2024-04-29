@@ -349,30 +349,18 @@ where
         Value::from(ident).into()
     }
 
-    fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> EvalVisitorRet<'e> {
-        let ret = Default::default();
-        fn check_remaining<'g, Kind: EvalKind + 'g>(
-            this: &ExprEval<'g, Kind>,
-            mut ret: Generator<'g>,
-            cond: &'g [AstNode],
-            branches: &'g [AstNode],
-        ) -> EvalVisitorRet<'g> {
-            if cond.is_empty() {
-                ret = ret.chain_gen(branches[0].accept(this));
-                return ret;
-            }
-            let vals = cond[0].accept(this);
-            for v in vals {
-                let v = v?;
-                if v.is_truthy() {
-                    ret = ret.chain_gen(branches[0].accept(this));
-                } else {
-                    ret = check_remaining(this, ret, &cond[1..], &branches[1..]);
-                }
-            }
-            ret
+    fn visit_if_else(
+        &self,
+        cond: &'e AstNode,
+        then: &'e AstNode,
+        else_: &'e AstNode,
+    ) -> EvalVisitorRet<'e> {
+        let mut ret = Generator::empty();
+        for c in cond.accept(self) {
+            let branch = if c?.is_truthy() { then } else { else_ };
+            ret = ret.chain_gen(branch.accept(self));
         }
-        check_remaining(self, ret, cond, branches)
+        ret
     }
 
     // array or object index
@@ -674,6 +662,7 @@ mod ast_eval_test {
         [obj_empty_val, "{a: 3, b: empty}", []]
         [or_short_ckt, "true or empty",["true"]]
         [and_short_ckt, "(1, false, 2) and (1,2)", ["true","true","false","true","true"]]
+        [if_else_comma, "if true,false then 1 elif true,false then 2 else 3 end", ["1","2","3"]]
 
         [label_first, "label $out | 1 | ., break $out", ["1"]]
         [foreach_1, "foreach .[] as $item (0; . + $item; [$item, . * 2])", "[1,2,3]", ["[1,2]", "[2,6]","[3,12]"]]

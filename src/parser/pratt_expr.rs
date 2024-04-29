@@ -149,27 +149,20 @@ impl JqPrattParser {
         let mut pairs = pair.into_inner();
         let cond = self.pratt_parser(pairs.next().unwrap().into_inner())?;
         let if_true = self.pratt_parser(pairs.next().unwrap().into_inner())?;
-        let mut cond = vec![cond];
-        let mut branch = vec![if_true];
-        let mut else_ = self.mk_ast(Expr::Dot, full_span);
-        for p in pairs {
-            match p.as_rule() {
-                Rule::elif => {
-                    let mut x = p.into_inner();
-                    let c = self.pratt_parser(x.next().unwrap().into_inner())?;
-                    let b = self.pratt_parser(x.next().unwrap().into_inner())?;
-                    cond.push(c);
-                    branch.push(b);
-                }
-                Rule::else_ => {
-                    else_ = self.pratt_parser(p.into_inner())?;
-                    break;
-                }
-                _ => unreachable!(),
+        let else_ = self.mk_ast(Expr::Dot, full_span);
+
+        let else_ = pairs.try_rfold(else_, |else_, p| match p.as_rule() {
+            Rule::elif => {
+                let span = p.as_span();
+                let mut x = p.into_inner();
+                let cond = self.next_expr(&mut x)?;
+                let then = self.next_expr(&mut x)?;
+                Ok(self.mk_ast(Expr::IfElse(cond, then, else_), span))
             }
-        }
-        branch.push(else_);
-        Ok(Expr::IfElse(cond, branch))
+            Rule::else_ => self.pratt_parser(p.into_inner()),
+            _ => unreachable!(),
+        })?;
+        Ok(Expr::IfElse(cond, if_true, else_))
     }
 
     fn parse_func_def(&self, p: Pair<Rule>) -> Result<FuncDef, ParseError> {
@@ -646,7 +639,7 @@ mod test_parser {
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}] | .", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]), Dot)"#]
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(BindVars(Literal(Number(3)), Variable("a"), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
-            [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse([Dot, BinOp(Less, Literal(Number(3)), Literal(Number(4)))], [Literal(Number(3)), Literal(Number(4)), Literal(Number(1))])"]
+            [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse(Dot, Literal(Number(3)), IfElse(BinOp(Less, Literal(Number(3)), Literal(Number(4))), Literal(Number(4)), Literal(Number(1))))"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
             [foreach, "foreach .[] as $i (0; .+$i; .*2)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), BinOp(Mul, Dot, Literal(Number(2))))"#]
             [foreach2, "foreach .[] as $i (0; .+$i)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), Dot)"#]

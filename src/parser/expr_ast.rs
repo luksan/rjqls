@@ -214,8 +214,8 @@ pub enum Expr {
     ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
     FuncScope(Vec<FuncDef>, Ast),
     Ident(String),
-    // the first vec is conditions, the second is true branches, with else as the last element
-    IfElse(ExprArray, ExprArray),
+    /// if (cond 0) then (true branch 1) else (false branch 2) end
+    IfElse(Ast, Ast, Ast),
     Index(Ast, Option<Ast>), // [2]
     LabeledPipe(BreakLabel, Ast, Ast),
     Literal(Value),
@@ -257,7 +257,7 @@ impl Expr {
                 visitor.visit_foreach(expr, var, init, update, extract)
             }
             Expr::Ident(i) => visitor.visit_ident(i),
-            Expr::IfElse(cond, branch) => visitor.visit_if_else(cond, branch),
+            Expr::IfElse(cond, then, else_) => visitor.visit_if_else(cond, then, else_),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
             Expr::LabeledPipe(label, lhs, rhs) => visitor.visit_labeled_pipe(label, lhs, rhs),
             Expr::Literal(lit) => visitor.visit_literal(lit),
@@ -344,10 +344,10 @@ pub trait ExprVisitor<'e, R> {
     fn visit_ident(&self, ident: &'e str) -> R {
         self.default()
     }
-    fn visit_if_else(&self, cond: &'e [AstNode], branches: &'e [AstNode]) -> R {
-        for x in cond.iter().chain(branches.iter()) {
-            x.accept(self);
-        }
+    fn visit_if_else(&self, cond: &'e AstNode, then: &'e AstNode, else_: &'e AstNode) -> R {
+        cond.accept(self);
+        then.accept(self);
+        else_.accept(self);
         self.default()
     }
     fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> R {
