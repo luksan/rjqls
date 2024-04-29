@@ -257,7 +257,7 @@ impl<'e> Iterator for GenCycle<'e> {
 
 pub struct CrossProd<'e, const N: usize> {
     gens: [BoxResValIter<'e>; N],
-    func: Box<dyn FnMut(&[Value; N]) -> Option<Result<Generator<'e>, EvalError>>>,
+    func: Box<dyn FnMut(&[Value; N]) -> Option<Result<Generator<'e>, EvalError>> + 'e>,
     values: [Value; N],
     update_pos: usize,
     curr: Generator<'e>,
@@ -267,7 +267,7 @@ pub struct CrossProd<'e, const N: usize> {
 impl<'e, const N: usize> CrossProd<'e, N> {
     pub fn new(
         gens: [BoxResValIter<'e>; N],
-        func: impl FnMut(&[Value; N]) -> Option<Result<Generator<'e>, EvalError>> + 'static,
+        func: impl FnMut(&[Value; N]) -> Option<Result<Generator<'e>, EvalError>> + 'e,
     ) -> Self {
         const NULL: Value = Value::Null;
         Self {
