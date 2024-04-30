@@ -22,6 +22,8 @@ pub trait ValueOps: Sized {
     fn mul(&self, other: &Self) -> Result<Self>;
     fn div(&self, other: &Self) -> Result<Self>;
 
+    fn del(&self, index: &Self) -> Result<Self>;
+
     fn is_truthy(&self) -> bool;
     fn less_than(&self, other: &Self) -> Self;
     fn index(&self, index: &Self) -> Result<Self>;
@@ -46,6 +48,15 @@ pub struct ArcArray(Arc<Vec<ArcValue>>);
 impl ArcArray {
     pub fn iter(&self) -> impl Iterator<Item = &ArcValue> {
         self.0.iter()
+    }
+
+    fn get_usize_idx(&self, idx: f64) -> Option<usize> {
+        let idx: usize = if idx >= 0.0 {
+            idx
+        } else {
+            self.0.len() as f64 + idx
+        } as _;
+        (idx < self.0.len()).then_some(idx)
     }
 }
 
@@ -267,6 +278,17 @@ impl Deref for ArcStr {
 }
 
 impl ArcValue {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            ArcValue::Null => "null",
+            ArcValue::Bool(_) => "bool",
+            ArcValue::Number(_) => "number",
+            ArcValue::String(_) => "string",
+            ArcValue::Array(_) => "array",
+            ArcValue::Object(_) => "object",
+        }
+    }
+
     pub fn as_array(&self) -> Option<&[Self]> {
         if let Self::Array(ArcArray(a)) = self {
             Some(a.as_slice())
@@ -508,6 +530,34 @@ impl ValueOps for ArcValue {
         })
     }
 
+    fn del(&self, index: &Self) -> Result<Self> {
+        match self {
+            ArcValue::Array(a) => {
+                let Some(idx) = index.as_f64() else {
+                    bail!("Cannot delete {} element of array", index.type_name())
+                };
+                let Some(idx) = a.get_usize_idx(idx) else {
+                    return Ok(self.clone());
+                };
+                let mut new = (*a.0).clone();
+                new.remove(idx);
+                Ok(new.into())
+            }
+            ArcValue::Object(o) => {
+                let Some(idx) = index.as_str() else {
+                    bail!("Cannot delete {} field from object", index.type_name())
+                };
+                if !o.0.contains_key(idx) {
+                    return Ok(self.clone());
+                }
+                let mut new = (*o.0).clone();
+                new.shift_remove(idx);
+                Ok(ArcValue::Object(ArcObj(Arc::new(new))))
+            }
+            _ => bail!("Can't delete fields from {}", self.type_name()),
+        }
+    }
+
     fn index(&self, index: &Self) -> Result<Self> {
         if let Self::Object(o) = self {
             let idx = index
@@ -515,14 +565,13 @@ impl ValueOps for ArcValue {
                 .with_context(|| format!("Can't index object with {index}."))?;
             return Ok(o.get(idx).cloned().unwrap_or(Self::Null));
         }
+
         let idx = index.as_f64().context("Index is not a number")?;
-        let idx: usize = if idx >= 0.0 {
-            idx
-        } else {
-            self.length()?.as_f64().unwrap() + idx
-        } as _;
         if let Self::Array(v) = self {
-            return Ok(v.0.get(idx).cloned().unwrap_or(Self::Null));
+            return Ok(v
+                .get_usize_idx(idx)
+                .map(|idx| v.0[idx].clone())
+                .unwrap_or(ArcValue::Null));
         }
 
         bail!("Cant index {} with {}", self, index)
