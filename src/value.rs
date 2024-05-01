@@ -32,7 +32,7 @@ pub trait ValueOps: Sized {
     fn length(&self) -> Result<Self>;
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ArcValue {
     Null,
     Bool(bool),
@@ -42,7 +42,7 @@ pub enum ArcValue {
     Object(ArcObj),
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArcArray(Arc<Vec<ArcValue>>);
 
 impl ArcArray {
@@ -84,196 +84,216 @@ impl Display for ArcArray {
 
 #[derive(Clone)]
 pub struct ArcNum(JsonNumber);
-impl<T: Into<JsonNumber>> From<T> for ArcNum {
-    fn from(value: T) -> Self {
-        Self(value.into())
-    }
-}
 
-impl ArcNum {
-    pub fn as_f64(&self) -> Option<f64> {
-        self.0.as_f64()
-    }
+mod arc_num {
+    use super::*;
 
-    pub fn as_bigint(&self) -> Option<i64> {
-        self.0.as_i64()
-    }
-}
-
-impl PartialEq for ArcNum {
-    fn eq(&self, other: &Self) -> bool {
-        if let (Some(a), Some(b)) = (self.as_bigint(), other.as_bigint()) {
-            return a == b;
+    impl<T: Into<JsonNumber>> From<T> for ArcNum {
+        fn from(value: T) -> Self {
+            Self(value.into())
         }
-        self.as_f64() == other.as_f64()
+    }
+
+    impl ArcNum {
+        pub fn as_f64(&self) -> Option<f64> {
+            self.0.as_f64()
+        }
+
+        pub fn as_bigint(&self) -> Option<i64> {
+            self.0.as_i64()
+        }
+    }
+
+    impl PartialEq for ArcNum {
+        fn eq(&self, other: &Self) -> bool {
+            if let (Some(a), Some(b)) = (self.as_bigint(), other.as_bigint()) {
+                return a == b;
+            }
+            self.as_f64().unwrap().total_cmp(&other.as_f64().unwrap()) == Ordering::Equal
+        }
+    }
+
+    impl Eq for ArcNum {}
+
+    impl Ord for ArcNum {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.as_f64().unwrap().total_cmp(&other.as_f64().unwrap())
+        }
+    }
+
+    impl PartialOrd for ArcNum {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Debug for ArcNum {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            let x = &self.0;
+            write!(f, "{x}")
+        }
     }
 }
 
-impl PartialOrd for ArcNum {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0
-            .as_f64()
-            .unwrap()
-            .partial_cmp(&other.0.as_f64().unwrap())
-    }
-}
-
-impl Debug for ArcNum {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let x = &self.0;
-        write!(f, "{x}")
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ArcObj(Arc<ObjMap>);
-
-impl Display for ArcObj {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{")?;
-        let mut first = true;
-        for (k, v) in self.0.iter() {
-            if !first {
-                write!(f, ",")?;
-            }
-            first = false;
-            write!(f, "\"{k}\":{v}")?
-        }
-        write!(f, "}}")
-    }
-}
-
-impl ArcObj {
-    pub fn new() -> Self {
-        Self(Default::default())
-    }
-
-    pub fn new_from(&self) -> ObjBuilder {
-        let a = (*self.0).clone();
-        ObjBuilder(ArcValue::Object(Self(Arc::new(a))))
-    }
-
-    pub fn get_mut_obj(&mut self) -> Option<&mut ObjMap> {
-        Arc::get_mut(&mut self.0)
-    }
-
-    fn keys(&self) -> Vec<&str> {
-        let mut keys = self.0.keys().map(|s| s.as_str()).collect::<Vec<_>>();
-        keys.sort();
-        keys
-    }
-}
-
-impl PartialOrd for ArcObj {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let keys_a = self.keys();
-        let keys_b = other.keys();
-        let k = keys_a.partial_cmp(&keys_b);
-        if k != Some(Ordering::Equal) {
-            return k;
-        };
-        for key in keys_a {
-            let x = self
-                .0
-                .get(key)
-                .unwrap()
-                .partial_cmp(other.0.get(key).unwrap());
-            if x != Some(Ordering::Equal) {
-                return x;
-            }
-        }
-        Some(Ordering::Equal)
-    }
-}
 
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct ObjBuilder(ArcValue);
 
-impl ObjBuilder {
-    pub fn new() -> Self {
-        Self(ArcValue::Object(ArcObj::new()))
+mod arc_obj {
+    use super::*;
+
+    impl Display for ArcObj {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{{")?;
+            let mut first = true;
+            for (k, v) in self.0.iter() {
+                if !first {
+                    write!(f, ",")?;
+                }
+                first = false;
+                write!(f, "\"{k}\":{v}")?
+            }
+            write!(f, "}}")
+        }
     }
 
-    fn get_mut_map(&mut self) -> &mut ObjMap {
-        let ArcValue::Object(ArcObj(ref mut obj)) = self.0 else {
-            unreachable!()
-        };
-        Arc::get_mut(obj).unwrap()
+    impl ArcObj {
+        pub fn new() -> Self {
+            Self(Default::default())
+        }
+
+        pub fn new_from(&self) -> ObjBuilder {
+            let a = (*self.0).clone();
+            ObjBuilder(ArcValue::Object(Self(Arc::new(a))))
+        }
+
+        pub fn get(&self, key: impl AsRef<str>) -> Option<&ArcValue> {
+            self.0.get(key.as_ref())
+        }
+
+        pub fn get_mut_obj(&mut self) -> Option<&mut ObjMap> {
+            Arc::get_mut(&mut self.0)
+        }
+
+        /// returns the keys as a sorted Vec
+        fn keys(&self) -> Vec<&str> {
+            let mut keys = self.0.keys().map(|s| s.as_str()).collect::<Vec<_>>();
+            keys.sort();
+            keys
+        }
     }
 
-    pub fn insert(&mut self, key: String, value: ArcValue) {
-        self.get_mut_map().insert(key, value);
+    impl PartialOrd for ArcObj {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for ArcObj {
+        fn cmp(&self, other: &Self) -> Ordering {
+            // begin with comparing all sorted keys, then compare the values
+            let keys_a = self.keys();
+            let keys_b = other.keys();
+            let k = keys_a.cmp(&keys_b);
+            if k != Ordering::Equal {
+                return k;
+            };
+            // compare the values in sorted key order
+            for key in keys_a {
+                let x = self.0.get(key).unwrap().cmp(other.0.get(key).unwrap());
+                if x != Ordering::Equal {
+                    return x;
+                }
+            }
+            Ordering::Equal
+        }
+    }
+
+    impl ObjBuilder {
+        pub fn new() -> Self {
+            Self(ArcValue::Object(ArcObj::new()))
+        }
+
+        fn get_mut_map(&mut self) -> &mut ObjMap {
+            let ArcValue::Object(ArcObj(ref mut obj)) = self.0 else {
+                unreachable!()
+            };
+            Arc::get_mut(obj).unwrap()
+        }
+
+        pub fn insert(&mut self, key: String, value: ArcValue) {
+            self.get_mut_map().insert(key, value);
+        }
+    }
+
+    impl Deref for ObjBuilder {
+        type Target = ObjMap;
+
+        fn deref(&self) -> &Self::Target {
+            let ArcValue::Object(ArcObj(ref obj)) = self.0 else {
+                unreachable!()
+            };
+            obj
+        }
+    }
+
+    impl DerefMut for ObjBuilder {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self.get_mut_map()
+        }
+    }
+
+    impl Default for ObjBuilder {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl From<ObjBuilder> for ArcValue {
+        fn from(value: ObjBuilder) -> Self {
+            value.0
+        }
     }
 }
-
-impl Deref for ObjBuilder {
-    type Target = ObjMap;
-
-    fn deref(&self) -> &Self::Target {
-        let ArcValue::Object(ArcObj(ref obj)) = self.0 else {
-            unreachable!()
-        };
-        obj
-    }
-}
-
-impl DerefMut for ObjBuilder {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.get_mut_map()
-    }
-}
-
-impl Default for ObjBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<ObjBuilder> for ArcValue {
-    fn from(value: ObjBuilder) -> Self {
-        value.0
-    }
-}
-
-impl ArcObj {
-    pub fn get(&self, key: impl AsRef<str>) -> Option<&ArcValue> {
-        self.0.get(key.as_ref())
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArcStr(Arc<String>);
-impl Debug for ArcStr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let x = &self.0;
-        write!(f, "{x:?}")
+mod arc_str {
+    use super::*;
+
+    impl Debug for ArcStr {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            let x = &self.0;
+            write!(f, "{x:?}")
+        }
     }
-}
 
-impl From<String> for ArcStr {
-    fn from(value: String) -> Self {
-        Self(Arc::new(value))
+    impl From<String> for ArcStr {
+        fn from(value: String) -> Self {
+            Self(Arc::new(value))
+        }
     }
-}
 
-impl From<ArcStr> for ArcValue {
-    fn from(value: ArcStr) -> Self {
-        Self::String(value)
+    impl From<ArcStr> for ArcValue {
+        fn from(value: ArcStr) -> Self {
+            Self::String(value)
+        }
     }
-}
 
-impl From<&ArcStr> for ArcValue {
-    fn from(value: &ArcStr) -> Self {
-        Self::String(value.clone())
+    impl From<&ArcStr> for ArcValue {
+        fn from(value: &ArcStr) -> Self {
+            Self::String(value.clone())
+        }
     }
-}
 
-impl Deref for ArcStr {
-    type Target = str;
+    impl Deref for ArcStr {
+        type Target = str;
 
-    fn deref(&self) -> &Self::Target {
-        self.0.as_str()
+        fn deref(&self) -> &Self::Target {
+            self.0.as_str()
+        }
     }
 }
 
@@ -330,87 +350,91 @@ impl ArcValue {
     }
 }
 
-impl From<JsonValue> for ArcValue {
-    fn from(value: JsonValue) -> Self {
-        match value {
-            JsonValue::Null => Self::Null,
-            JsonValue::Bool(b) => Self::Bool(b),
-            JsonValue::Number(n) => Self::Number(n.into()),
-            JsonValue::String(s) => Self::String(s.into()),
-            JsonValue::Array(a) => {
-                let v = a.into_iter().map(|v| v.into()).collect();
-                Self::Array(ArcArray(Arc::new(v)))
-            }
-            JsonValue::Object(o) => {
-                let mut obj = ObjBuilder::new();
-                for (k, v) in o.into_iter() {
-                    obj.insert(k, v.into());
+pub mod from_impls {
+    use super::*;
+
+    impl From<JsonValue> for ArcValue {
+        fn from(value: JsonValue) -> Self {
+            match value {
+                JsonValue::Null => Self::Null,
+                JsonValue::Bool(b) => Self::Bool(b),
+                JsonValue::Number(n) => Self::Number(n.into()),
+                JsonValue::String(s) => Self::String(s.into()),
+                JsonValue::Array(a) => {
+                    let v = a.into_iter().map(|v| v.into()).collect();
+                    Self::Array(ArcArray(Arc::new(v)))
                 }
-                obj.into()
+                JsonValue::Object(o) => {
+                    let mut obj = ObjBuilder::new();
+                    for (k, v) in o.into_iter() {
+                        obj.insert(k, v.into());
+                    }
+                    obj.into()
+                }
             }
         }
     }
-}
 
-impl From<f64> for ArcValue {
-    fn from(value: f64) -> Self {
-        JsonValue::from(value).into()
+    impl From<f64> for ArcValue {
+        fn from(value: f64) -> Self {
+            JsonValue::from(value).into()
+        }
     }
-}
 
-impl From<usize> for ArcValue {
-    fn from(value: usize) -> Self {
-        JsonValue::from(value).into()
+    impl From<usize> for ArcValue {
+        fn from(value: usize) -> Self {
+            JsonValue::from(value).into()
+        }
     }
-}
 
-impl From<i32> for ArcValue {
-    fn from(value: i32) -> Self {
-        Self::Number(ArcNum(value.into()))
+    impl From<i32> for ArcValue {
+        fn from(value: i32) -> Self {
+            Self::Number(ArcNum(value.into()))
+        }
     }
-}
 
-impl From<i64> for ArcValue {
-    fn from(value: i64) -> Self {
-        Self::Number(ArcNum(value.into()))
+    impl From<i64> for ArcValue {
+        fn from(value: i64) -> Self {
+            Self::Number(ArcNum(value.into()))
+        }
     }
-}
 
-impl From<()> for ArcValue {
-    fn from(_: ()) -> Self {
-        Self::Null
+    impl From<()> for ArcValue {
+        fn from(_: ()) -> Self {
+            Self::Null
+        }
     }
-}
 
-impl From<bool> for ArcValue {
-    fn from(value: bool) -> Self {
-        Self::Bool(value)
+    impl From<bool> for ArcValue {
+        fn from(value: bool) -> Self {
+            Self::Bool(value)
+        }
     }
-}
 
-impl From<Vec<ArcValue>> for ArcValue {
-    fn from(value: Vec<ArcValue>) -> Self {
-        Self::Array(ArcArray(Arc::new(value)))
+    impl From<Vec<ArcValue>> for ArcValue {
+        fn from(value: Vec<ArcValue>) -> Self {
+            Self::Array(ArcArray(Arc::new(value)))
+        }
     }
-}
 
-impl From<&str> for ArcValue {
-    fn from(value: &str) -> Self {
-        value.to_owned().into()
+    impl From<&str> for ArcValue {
+        fn from(value: &str) -> Self {
+            value.to_owned().into()
+        }
     }
-}
 
-impl From<String> for ArcValue {
-    fn from(value: String) -> Self {
-        Self::String(ArcStr::from(value))
+    impl From<String> for ArcValue {
+        fn from(value: String) -> Self {
+            Self::String(ArcStr::from(value))
+        }
     }
-}
 
-impl FromStr for ArcValue {
-    type Err = anyhow::Error;
+    impl FromStr for ArcValue {
+        type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(JsonValue::from_str(s).context("Invalid json value")?.into())
+        fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+            Ok(JsonValue::from_str(s).context("Invalid json value")?.into())
+        }
     }
 }
 
