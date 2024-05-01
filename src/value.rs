@@ -626,6 +626,8 @@ impl ValueOps for ArcValue {
 
 #[cfg(test)]
 mod value_tests {
+    use itertools::Itertools;
+
     use super::*;
 
     #[test]
@@ -645,6 +647,45 @@ mod value_tests {
             let a = ArcValue::from_str(a).unwrap();
             let b = ArcValue::from_str(b).unwrap();
             assert_eq!(a == b, eq)
+        }
+    }
+
+    #[test]
+    fn test_sort_order() {
+        let strrep = [
+            "null",
+            "false",
+            "true",
+            "-1.1",
+            "-1",
+            "-0.1",
+            "-0.0",
+            "0.0",
+            "0.1",
+            "1.0",
+            "1",
+            "1.1",
+            "\"a\"",
+            "\"b\"",
+            "[1,2]",
+            "[1,2,3]",
+            "[1,3]",
+            "{\"a\":1}",
+            "{\"a\":2}",
+            "{\"b\":1}",
+        ];
+        let vals = strrep
+            .iter()
+            .map(|v| {
+                ArcValue::from_str(v)
+                    .with_context(|| format!("bad json '{v}'"))
+                    .unwrap()
+            })
+            .collect_vec();
+        let mut s = vals.clone();
+        s.sort();
+        for (&a, b) in strrep.iter().zip(s.iter().map(|v| v.to_string())) {
+            assert_eq!(a, b)
         }
     }
 }
