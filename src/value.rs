@@ -599,22 +599,32 @@ impl ValueOps for ArcValue {
     }
 
     fn index(&self, index: &Self) -> Result<Self> {
-        if let Self::Object(o) = self {
-            let idx = index
-                .as_str()
-                .with_context(|| format!("Can't index object with {index}."))?;
-            return Ok(o.get(idx).cloned().unwrap_or(Self::Null));
+        let str_idx = index.as_str();
+        let num_idx = index.as_f64();
+        if str_idx.is_some() || num_idx.is_some() {
+            match self {
+                ArcValue::Null => return Ok(ArcValue::Null),
+                ArcValue::Array(v) => {
+                    let idx = num_idx.context("Index is not a number")?;
+                    return Ok(v
+                        .get_usize_idx(idx)
+                        .map(|idx| v.0[idx].clone())
+                        .unwrap_or(ArcValue::Null));
+                }
+                ArcValue::Object(o) => {
+                    let idx =
+                        str_idx.with_context(|| format!("Can't index object with {index}."))?;
+                    return Ok(o.get(idx).cloned().unwrap_or(Self::Null));
+                }
+                _ => {}
+            }
         }
-
-        let idx = index.as_f64().context("Index is not a number")?;
-        if let Self::Array(v) = self {
-            return Ok(v
-                .get_usize_idx(idx)
-                .map(|idx| v.0[idx].clone())
-                .unwrap_or(ArcValue::Null));
-        }
-
-        bail!("Cant index {} with {}", self, index)
+        bail!(
+            "Cant index {} with {} {}",
+            self.type_name(),
+            index.type_name(),
+            index
+        )
     }
 
     fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Self> + '_>> {
