@@ -68,9 +68,7 @@ where
 
             // Regex
             ("_match_impl", 3) => {
-                let [regex, mods, testmode] = args else {
-                    unreachable!()
-                };
+                let [regex, mods, testmode] = args else { unreachable!() };
                 let mut ret = vec![];
                 for regex in regex.accept(self) {
                     let regex = regex?; // TODO: push the error?
