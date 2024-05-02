@@ -23,6 +23,7 @@ pub trait ValueOps: Sized {
     fn div(&self, other: &Self) -> Result<Self>;
 
     fn del(&self, index: &Self) -> Result<Self>;
+    fn replace_field(self, index: &Self, f: impl FnOnce(Self) -> Result<Self>) -> Result<Self>;
 
     fn is_truthy(&self) -> bool;
     fn less_than(&self, other: &Self) -> Self;
@@ -218,9 +219,7 @@ mod arc_obj {
         }
 
         fn get_mut_map(&mut self) -> &mut ObjMap {
-            let ArcValue::Object(ArcObj(ref mut obj)) = self.0 else {
-                unreachable!()
-            };
+            let ArcValue::Object(ArcObj(ref mut obj)) = self.0 else { unreachable!() };
             Arc::get_mut(obj).unwrap()
         }
 
@@ -233,9 +232,7 @@ mod arc_obj {
         type Target = ObjMap;
 
         fn deref(&self) -> &Self::Target {
-            let ArcValue::Object(ArcObj(ref obj)) = self.0 else {
-                unreachable!()
-            };
+            let ArcValue::Object(ArcObj(ref obj)) = self.0 else { unreachable!() };
             obj
         }
     }
@@ -579,6 +576,25 @@ impl ValueOps for ArcValue {
                 Ok(ArcValue::Object(ArcObj(Arc::new(new))))
             }
             _ => bail!("Can't delete fields from {}", self.type_name()),
+        }
+    }
+
+    fn replace_field(self, index: &Self, f: impl FnOnce(Self) -> Result<Self>) -> Result<Self> {
+        let slot_val = self.index(index)?;
+        match self {
+            ArcValue::Array(mut a) => {
+                let slot_idx = a.get_usize_idx(index.as_f64().unwrap()).unwrap();
+                let new_array = Arc::make_mut(&mut a.0);
+                new_array[slot_idx] = f(slot_val)?;
+                Ok(ArcValue::Array(a))
+            }
+            ArcValue::Object(mut o) => {
+                let key = index.as_str().unwrap();
+                let new_obj = Arc::make_mut(&mut o.0);
+                new_obj[key] = f(slot_val)?;
+                Ok(ArcValue::Object(o))
+            }
+            _ => unreachable!("Can't index or replace in this value kind"),
         }
     }
 

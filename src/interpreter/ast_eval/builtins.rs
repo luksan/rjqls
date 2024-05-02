@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use itertools::Itertools;
 
 use crate::bail;
 use crate::interpreter::generator::{CrossProd, GenCycle};
@@ -25,6 +26,22 @@ where
                     sum = sum.add(v)?;
                 }
                 sum.into()
+            }
+            ("delpaths", 1) => {
+                let evald = args[0].accept(self).next()??; // TODO: handle all paths
+                let paths = evald
+                    .as_array()
+                    .context("Paths must be specified as an array")?;
+                let mut paths: Vec<_> = paths
+                    .iter()
+                    .map(|p| {
+                        p.as_array()
+                            .context("Path must be specified as array, not TODO")
+                    })
+                    .try_collect()?;
+                paths.sort_unstable();
+                self.delpaths(self.input().clone(), &mut paths.into_iter())
+                    .into()
             }
             ("empty", 0) => Default::default(),
             ("error", 0) => EvalError::Value(self.input().clone()).into(),
@@ -150,6 +167,29 @@ where
 
             (_, len) => bail!("Function {name}/{len} not found."),
         }
+    }
+
+    /// paths must be sorted
+    fn delpaths(&self, input: Value, paths: &mut dyn Iterator<Item = &[Value]>) -> Result<Value> {
+        let mut del = vec![];
+        let group = paths
+            .filter_map(|p| p.split_first())
+            .group_by(|(this, _)| *this);
+
+        let mut out = input;
+        for (this, paths) in group.into_iter() {
+            let mut tail = paths.map(|p| p.1).peekable();
+            if tail.peek().unwrap().is_empty() {
+                del.push(this);
+                continue
+            }
+            out = out.replace_field(&this, |slot_val| self.delpaths(slot_val, &mut tail))?;
+        }
+
+        for d in del.into_iter().rev() {
+            out = out.del(d)?;
+        }
+        Ok(out)
     }
 }
 
