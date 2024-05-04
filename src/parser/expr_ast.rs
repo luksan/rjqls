@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 
 use anyhow::bail;
+use paste::paste;
 use pest::Span;
 use tracing::{instrument, trace};
 
@@ -199,8 +200,68 @@ pub struct FuncDef {
     pub body: Ast,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Expr {
+macro_rules! tup_des {
+    ($val:expr, $x:path, ) => {{
+        let $x = $val else { unreachable!() };
+        ()
+    }};
+    ($val:expr, $x:path, $a:ty) => {{
+        let $x(a) = $val else { unreachable!() };
+        a
+    }};
+    ($val:expr, $x:path, $a:ty, $b:ty) => {{
+        let $x(a, b) = $val else { unreachable!() };
+        (a, b)
+    }};
+    ($val:expr, $x:path, $a:ty, $b:ty, $c:ty) => {{
+        let $x(a, b, c) = $val else { unreachable!() };
+        (a, b, c)
+    }};
+    ($val:expr, $x:path, $a:ty, $b:ty, $c:ty, $d:ty) => {{
+        let $x(a, b, c, d) = $val else { unreachable!() };
+        (a, b, c, d)
+    }};
+    ($val:expr, $x:path, $a:ty, $b:ty, $c:ty, $d:ty, $e:ty) => {{
+        let $x(a, b, c, d, e) = $val else { unreachable!() };
+        (a, b, c, d, e)
+    }};
+}
+macro_rules! mk_expr_enum {
+    ($($mem:ident$(($($t:ty),+$( as $always_empty:ident)?))?,)+) => {
+
+        #[derive(Debug, PartialEq)]
+        pub enum Expr {
+            $($mem$(($($t),+))?,)+
+        }
+
+        impl AstLoc {
+            pub fn walk_ast<'e, R>(&'e self, walker: &(impl AstWalker<'e, R> + ?Sized)) -> R {
+                match &*self.expr {
+                    $(Expr::$mem$((..$($always_empty)?))? => paste! { walker.[<visit_ $mem:snake>](self) } ,)+
+                }
+            }
+            $(
+            paste!{
+                #[allow(unused_parens)]
+                pub fn [<ref_ $mem:snake>](&self) -> ($($(&$t),+)?) {
+                    tup_des!(&*self.expr, Expr::$mem, $($(&$t),+)?)
+                }
+            }
+            )+
+        }
+
+        pub trait AstWalker<'e, R> {
+            fn default(&self, node: &'e Ast) -> R;
+            $(
+            paste!{fn [<visit_ $mem:snake>](&self, node: &'e Ast) -> R {
+                self.default(node)
+            }}
+            )+
+        }
+    };
+}
+
+mk_expr_enum! {
     Alternative(Ast, Ast),
     Array(ExprArray),
     Assign(Ast, Ast),
@@ -214,7 +275,7 @@ pub enum Expr {
     ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
     FuncScope(Vec<FuncDef>, Ast),
     Ident(String),
-    /// if (cond 0) then (true branch 1) else (false branch 2) end
+    // if (cond 0) then (true branch 1) else (false branch 2) end
     IfElse(Ast, Ast, Ast),
     Index(Ast, Option<Ast>), // [2]
     LabeledPipe(BreakLabel, Ast, Ast),

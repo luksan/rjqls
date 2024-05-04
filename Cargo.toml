@@ -11,6 +11,7 @@ cap-std = "3.0.0"
 indexmap = { version = "2.2.5" }
 itertools = "0.12.1"
 onig = { version = "6.4.0", default-features = false }
+paste = "1.0.14"
 pest = "2.7.0"
 pest_derive = "2.7.0"
 serde_json = { version = "1.0.99", features = ["arbitrary_precision", "preserve_order"] }

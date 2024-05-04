@@ -405,6 +405,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caff54706df99d2a78a5a4e3455ff45448d81ef1bb63c22cd14052ca0e993a3f"
 
 [[package]]
+name = "paste"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
+
+[[package]]
 name = "pest"
 version = "2.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -545,6 +551,7 @@ dependencies = [
  "indexmap",
  "itertools",
  "onig",
+ "paste",
  "pest",
  "pest_derive",
  "serde_json",
