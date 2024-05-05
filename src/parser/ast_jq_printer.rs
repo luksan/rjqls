@@ -184,19 +184,17 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.putc('}');
     }
 
-    fn visit_labeled_pipe(&self, label: &BreakLabel, lhs: &AstNode, rhs: &AstNode) -> () {
+    fn visit_pipe(&self, label: Option<&BreakLabel>, lhs: &AstNode, rhs: &AstNode) -> () {
         lhs.accept(self);
-        assert_eq!(Some('.'), self.r.borrow_mut().pop()); // remove the Dot
-        self.puts("label $");
-        self.puts(label.as_str());
-        self.putc('|');
-        rhs.accept(self);
-    }
-
-    fn visit_pipe(&self, lhs: &AstNode, rhs: &AstNode) -> () {
-        lhs.accept(self);
-        if !matches!(&**lhs, Expr::Index(_, _)) || !ChainedIndexPipeRemover::check(rhs) {
+        if let Some(label) = label {
+            assert_eq!(Some('.'), self.r.borrow_mut().pop()); // remove the Dot
+            self.puts("label $");
+            self.puts(label.as_str());
             self.putc('|');
+        } else {
+            if !matches!(&**lhs, Expr::Index(_, _)) || !ChainedIndexPipeRemover::check(rhs) {
+                self.putc('|');
+            }
         }
         rhs.accept(self);
     }

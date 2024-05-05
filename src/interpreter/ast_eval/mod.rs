@@ -442,9 +442,9 @@ where
         EvalError::Break(name.clone()).into()
     }
 
-    fn visit_labeled_pipe(
+    fn visit_pipe(
         &self,
-        label: &'e BreakLabel,
+        label: Option<&'e BreakLabel>,
         lhs: &'e AstNode,
         rhs: &'e AstNode,
     ) -> EvalVisitorRet<'e> {
@@ -453,18 +453,11 @@ where
         let mut rhs_eval = self.clone_with_input(Value::Null);
         for value in lhs {
             rhs_eval.eval_kind.input = value?;
-            ret = ret.chain_break(rhs.accept(&rhs_eval), label.clone());
-        }
-        ret
-    }
-
-    fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> EvalVisitorRet<'e> {
-        let lhs = lhs.accept(self);
-        let mut ret = Generator::empty();
-        let mut rhs_eval = self.clone_with_input(Value::Null);
-        for value in lhs {
-            rhs_eval.eval_kind.input = value?;
-            ret = ret.chain_gen(rhs.accept(&rhs_eval));
+            if let Some(label) = label {
+                ret = ret.chain_break(rhs.accept(&rhs_eval), label.clone());
+            } else {
+                ret = ret.chain_gen(rhs.accept(&rhs_eval));
+            }
         }
         ret
     }

@@ -278,10 +278,9 @@ mk_expr_enum! {
     // if (cond 0) then (true branch 1) else (false branch 2) end
     IfElse(Ast, Ast, Ast),
     Index(Ast, Option<Ast>), // [2]
-    LabeledPipe(BreakLabel, Ast, Ast),
     Literal(Value),
     Object(Vec<ObjectEntry>),
-    Pipe(Ast, Ast),
+    Pipe(Option<BreakLabel>, Ast, Ast),
     Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
     Scope(Ast),
     Slice(Ast, Option<Ast>, Option<Ast>),
@@ -320,10 +319,9 @@ impl Expr {
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, then, else_) => visitor.visit_if_else(cond, then, else_),
             Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
-            Expr::LabeledPipe(label, lhs, rhs) => visitor.visit_labeled_pipe(label, lhs, rhs),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
-            Expr::Pipe(lhs, rhs) => visitor.visit_pipe(lhs, rhs),
+            Expr::Pipe(label, lhs, rhs) => visitor.visit_pipe(label.as_ref(), lhs, rhs),
             Expr::Reduce(input, var, init, update) => {
                 visitor.visit_reduce(input, var, init, update)
             }
@@ -426,12 +424,7 @@ pub trait ExprVisitor<'e, R> {
         }
         self.default()
     }
-    fn visit_labeled_pipe(&self, label: &'e BreakLabel, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
-        lhs.accept(self);
-        rhs.accept(self);
-        self.default()
-    }
-    fn visit_pipe(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
+    fn visit_pipe(&self, label: Option<&'e BreakLabel>, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()

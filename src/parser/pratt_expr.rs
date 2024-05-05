@@ -341,12 +341,12 @@ impl JqPrattParser {
                     }
                     Rule::alt => Expr::Alternative(lhs, rhs),
                     Rule::comma => Expr::Comma(lhs, rhs),
-                    Rule::labeled_pipe => Expr::LabeledPipe(
-                        self.latest_label().unwrap(), // the label was created in the previous token
+                    Rule::labeled_pipe => Expr::Pipe(
+                        self.latest_label(), // the label was created in the previous token, pipe_label
                         lhs,
                         rhs,
                     ),
-                    Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(lhs, rhs),
+                    Rule::pipe | Rule::idx_chain_pipe => Expr::Pipe(None, lhs, rhs),
                     Rule::assign => Expr::Assign(lhs, rhs),
                     Rule::upd_assign => Expr::UpdateAssign(lhs, rhs),
                     Rule::arith_assign => {
@@ -604,7 +604,7 @@ mod test_parser {
             [brk_pre, "1+§2*4", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Breakpoint(Literal(Number(2))), Literal(Number(4))))"]
             [brk_post, "1+2*4?§", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Literal(Number(2)), Breakpoint(TryCatch(Literal(Number(4)), None))))"]
 
-            [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
+            [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(None, Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
             [iter, ".[]", "Index(Dot, None)"]
             [idx_item, ".a", r#"Index(Dot, Some(Ident("a")))"#],
             [idx_string, r#"."a""#, r#"Index(Dot, Some(Literal(String("a"))))"#]
@@ -617,7 +617,7 @@ mod test_parser {
             [idx_chain_dot, r#".[1].[2]"#, "Index(Index(Dot, Some(Literal(Number(1)))), Some(Literal(Number(2))))"]
             [idx_chain_dot_str, r#"."a"."b""#, r#"Index(Index(Dot, Some(Literal(String("a")))), Some(Literal(String("b"))))"#]
             [idx_chain_str_brkt, r#"."a"[1]"#, r#"Index(Index(Dot, Some(Literal(String("a")))), Some(Literal(Number(1))))"#]
-            [idx_chain_try, ".[1][2]?[3]", "Pipe(Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
+            [idx_chain_try, ".[1][2]?[3]", "Pipe(None, Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
             [idx_dot_infix,".a.b",r#"Index(Index(Dot, Some(Ident("a"))), Some(Ident("b")))"#]
 
             [idx_precedence_1, ". * .[0]?", "BinOp(Mul, Dot, TryCatch(Index(Dot, Some(Literal(Number(0)))), None))"]
@@ -625,8 +625,8 @@ mod test_parser {
             [slice_start, ".[1:]", "Slice(Dot, Some(Literal(Number(1))), None)"]
             [slice_end, ".[:1]", "Slice(Dot, None, Some(Literal(Number(1))))"]
 
-            [label_1, "label $a | .", r#"LabeledPipe("a", Dot, Dot)"#]
-            [label_2, "1 + label $a | break $a", r#"LabeledPipe("a", BinOp(Add, Literal(Number(1)), Dot), Break("a"))"#]
+            [label_1, "label $a | .", r#"Pipe(Some("a"), Dot, Dot)"#]
+            [label_2, "1 + label $a | break $a", r#"Pipe(Some("a"), BinOp(Add, Literal(Number(1)), Dot), Break("a"))"#]
 
             [ua_add, ".x += 1", r#"UpdateAssign(Index(Dot, Some(Ident("x"))), BinOp(Add, Dot, Literal(Number(1))))"#]
 
@@ -635,9 +635,9 @@ mod test_parser {
             [object_construction, r#"{a: 4, b: "5", "c": 6}"#, r#"Object([ObjectEntry { key: Ident("a"), value: Literal(Number(4)) }, ObjectEntry { key: Ident("b"), value: Literal(String("5")) }, ObjectEntry { key: Literal(String("c")), value: Literal(Number(6)) }])"#]
             [variable, "3+$a", "BinOp(Add, Literal(Number(3)), Variable(\"a\"))"]
             [var_binding, "3 as $a | .", "BindVars(Literal(Number(3)), Variable(\"a\"), Dot)"]
-            [var_bind_prio, "3 as $a| $a | def f:.; $a", r#"BindVars(Literal(Number(3)), Variable("a"), Pipe(Variable("a"), FuncScope([FuncDef { name: "f", args: [], body: Dot }], Variable("a"))))"#]
+            [var_bind_prio, "3 as $a| $a | def f:.; $a", r#"BindVars(Literal(Number(3)), Variable("a"), Pipe(None, Variable("a"), FuncScope([FuncDef { name: "f", args: [], body: Dot }], Variable("a"))))"#]
             [pattern_match, "[1,2,{a: 3}] as [$a,$b,{a:$c}] | .", r#"BindVars(Array([Literal(Number(1)), Literal(Number(2)), Object([ObjectEntry { key: Ident("a"), value: Literal(Number(3)) }])]), Array([Variable("a"), Variable("b"), Object([ObjectEntry { key: Ident("a"), value: Variable("c") }])]), Dot)"#]
-            [var_scope, "(3 as $a | $a) | $a", r#"Pipe(Scope(BindVars(Literal(Number(3)), Variable("a"), Variable("a"))), Variable("a"))"#]
+            [var_scope, "(3 as $a | $a) | $a", r#"Pipe(None, Scope(BindVars(Literal(Number(3)), Variable("a"), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
             [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse(Dot, Literal(Number(3)), IfElse(BinOp(Less, Literal(Number(3)), Literal(Number(4))), Literal(Number(4)), Literal(Number(1))))"]
             [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
@@ -730,7 +730,7 @@ mod test_parser {
         let res = JqGrammar::parse(Rule::pratt_prog, "[1,2,3]");
 
         let Ok(pairs) = res else {
-            panic!("{:?}", dbg!(res))
+            panic!("{:?}", dbg!(res));
         };
         for _t in pairs.flatten().tokens() {
             //     println!("{_t:?}");
