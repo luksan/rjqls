@@ -338,17 +338,14 @@ impl<'e, const N: usize> Iterator for CrossProd<'e, N> {
 /// A generator for generators
 pub struct GenGen<'e, G> {
     gens: G,
-    func: Box<dyn FnMut(&mut G) -> Option<Result<Generator<'e>, EvalError>>>,
+    func: Box<dyn FnMut(&mut G) -> Option<Generator<'e>>>,
     curr: Generator<'e>,
     fused: bool,
 }
 
 impl<'e, G> GenGen<'e, G> {
     #[allow(dead_code)]
-    pub fn new(
-        gens: G,
-        func: impl FnMut(&mut G) -> Option<Result<Generator<'e>, EvalError>> + 'static,
-    ) -> Self {
+    pub fn new(gens: G, func: impl FnMut(&mut G) -> Option<Generator<'e>> + 'static) -> Self {
         Self {
             gens,
             func: Box::new(func),
@@ -370,14 +367,10 @@ impl<'e, G> Iterator for GenGen<'e, G> {
         }
 
         match (self.func)(&mut self.gens) {
-            Some(Ok(gen)) => self.curr = gen,
+            Some(gen) => self.curr = gen,
             None => {
                 self.fused = true;
                 return None;
-            }
-            Some(Err(e)) => {
-                self.fused = true;
-                return Some(Err(e));
             }
         }
         self.next()

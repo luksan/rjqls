@@ -147,21 +147,29 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         self.puts(" end");
     }
 
-    fn visit_index(&self, expr: &AstNode, idx: Option<&AstNode>) -> () {
+    fn visit_index(&self, expr: &AstNode, idx: &AstNode) -> () {
         if self.r.borrow().as_bytes().last() != Some(&b']') || !matches!(&**expr, Expr::Dot) {
             // don't emit redundant dots
             expr.accept(self);
         }
-        if let Some(Expr::Ident(ident)) = idx.map(|e| &**e) {
+        if let Expr::Ident(ident) = &**idx {
             if !matches!(&**expr, Expr::Dot) {
                 self.putc('.');
             }
             self.puts(ident);
         } else {
             self.putc('[');
-            idx.map(|idx| idx.accept(self));
+            idx.accept(self);
             self.putc(']');
         }
+    }
+
+    fn visit_iterate(&self, expr: &'_ AstNode) -> () {
+        if self.r.borrow().as_bytes().last() != Some(&b']') || !matches!(&**expr, Expr::Dot) {
+            // don't emit redundant dots
+            expr.accept(self);
+        }
+        self.puts("[]")
     }
 
     fn visit_literal(&self, lit: &Value) -> () {
@@ -321,7 +329,12 @@ impl ExprVisitor<'_, ()> for ChainedIndexPipeRemover {
         // dot found, we're done
     }
 
-    fn visit_index(&self, expr: &AstNode, _idx: Option<&AstNode>) {
+    fn visit_index(&self, expr: &AstNode, _idx: &AstNode) {
+        self.is_chained_idx.set(true);
+        expr.accept(self)
+    }
+
+    fn visit_iterate(&self, expr: &'_ AstNode) -> () {
         self.is_chained_idx.set(true);
         expr.accept(self)
     }

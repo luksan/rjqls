@@ -384,8 +384,8 @@ impl JqPrattParser {
                         Expr::BindVars(expr, self.next_expr(inner)?, self.next_expr(inner)?)
                     }
                     Rule::dbg_brk_post => Expr::Breakpoint(expr),
-                    Rule::index => Expr::Index(expr, Some(self.parse_inner_expr(op)?)),
-                    Rule::iterate => Expr::Index(expr, None),
+                    Rule::index => Expr::Index(expr, self.parse_inner_expr(op)?),
+                    Rule::iterate => Expr::Iterate(expr),
                     Rule::slice => {
                         let mut pairs = op.into_inner();
                         let a = pairs.next().unwrap();
@@ -604,23 +604,23 @@ mod test_parser {
             [brk_pre, "1+§2*4", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Breakpoint(Literal(Number(2))), Literal(Number(4))))"]
             [brk_post, "1+2*4?§", "BinOp(Add, Literal(Number(1)), BinOp(Mul, Literal(Number(2)), Breakpoint(TryCatch(Literal(Number(4)), None))))"]
 
-            [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Some(Ident("a"))), Pipe(None, Index(Dot, Some(Ident("b"))), TryCatch(Index(Dot, Some(Literal(Number(0)))), None)))"#]
-            [iter, ".[]", "Index(Dot, None)"]
-            [idx_item, ".a", r#"Index(Dot, Some(Ident("a")))"#],
-            [idx_string, r#"."a""#, r#"Index(Dot, Some(Literal(String("a"))))"#]
-            [idx_brkt_string, r#".["a"]"#, r#"Index(Dot, Some(Literal(String("a"))))"#]
-            [idx_brkt_ident, ".[a]", r#"Index(Dot, Some(Call("a", [])))"#]
-            [idx_int, ".[1]", "Index(Dot, Some(Literal(Number(1))))"]
-            [idx_var_ident, "$a.b", r#"Index(Variable("a"), Some(Ident("b")))"#]
-            [idx_var_brkt, "$a.[1]", r#"Index(Variable("a"), Some(Literal(Number(1))))"#]
-            [idx_chain, ".[1][2]", "Index(Index(Dot, Some(Literal(Number(1)))), Some(Literal(Number(2))))"]
-            [idx_chain_dot, r#".[1].[2]"#, "Index(Index(Dot, Some(Literal(Number(1)))), Some(Literal(Number(2))))"]
-            [idx_chain_dot_str, r#"."a"."b""#, r#"Index(Index(Dot, Some(Literal(String("a")))), Some(Literal(String("b"))))"#]
-            [idx_chain_str_brkt, r#"."a"[1]"#, r#"Index(Index(Dot, Some(Literal(String("a")))), Some(Literal(Number(1))))"#]
-            [idx_chain_try, ".[1][2]?[3]", "Pipe(None, Index(Dot, Some(Literal(Number(1)))), Index(TryCatch(Index(Dot, Some(Literal(Number(2)))), None), Some(Literal(Number(3)))))"]
-            [idx_dot_infix,".a.b",r#"Index(Index(Dot, Some(Ident("a"))), Some(Ident("b")))"#]
+            [comma_pipe_idx, ".a, .b[0]?", r#"Comma(Index(Dot, Ident("a")), Pipe(None, Index(Dot, Ident("b")), TryCatch(Index(Dot, Literal(Number(0))), None)))"#]
+            [iter, ".[]", "Iterate(Dot)"]
+            [idx_item, ".a", r#"Index(Dot, Ident("a"))"#],
+            [idx_string, r#"."a""#, r#"Index(Dot, Literal(String("a")))"#]
+            [idx_brkt_string, r#".["a"]"#, r#"Index(Dot, Literal(String("a")))"#]
+            [idx_brkt_ident, ".[a]", r#"Index(Dot, Call("a", []))"#]
+            [idx_int, ".[1]", "Index(Dot, Literal(Number(1)))"]
+            [idx_var_ident, "$a.b", r#"Index(Variable("a"), Ident("b"))"#]
+            [idx_var_brkt, "$a.[1]", r#"Index(Variable("a"), Literal(Number(1)))"#]
+            [idx_chain, ".[1][2]", "Index(Index(Dot, Literal(Number(1))), Literal(Number(2)))"]
+            [idx_chain_dot, r#".[1].[2]"#, "Index(Index(Dot, Literal(Number(1))), Literal(Number(2)))"]
+            [idx_chain_dot_str, r#"."a"."b""#, r#"Index(Index(Dot, Literal(String("a"))), Literal(String("b")))"#]
+            [idx_chain_str_brkt, r#"."a"[1]"#, r#"Index(Index(Dot, Literal(String("a"))), Literal(Number(1)))"#]
+            [idx_chain_try, ".[1][2]?[3]", "Pipe(None, Index(Dot, Literal(Number(1))), Index(TryCatch(Index(Dot, Literal(Number(2))), None), Literal(Number(3))))"]
+            [idx_dot_infix,".a.b",r#"Index(Index(Dot, Ident("a")), Ident("b"))"#]
 
-            [idx_precedence_1, ". * .[0]?", "BinOp(Mul, Dot, TryCatch(Index(Dot, Some(Literal(Number(0)))), None))"]
+            [idx_precedence_1, ". * .[0]?", "BinOp(Mul, Dot, TryCatch(Index(Dot, Literal(Number(0))), None))"]
             [slice, ".[1:2]", "Slice(Dot, Some(Literal(Number(1))), Some(Literal(Number(2))))"]
             [slice_start, ".[1:]", "Slice(Dot, Some(Literal(Number(1))), None)"]
             [slice_end, ".[:1]", "Slice(Dot, None, Some(Literal(Number(1))))"]
@@ -628,7 +628,7 @@ mod test_parser {
             [label_1, "label $a | .", r#"Pipe(Some("a"), Dot, Dot)"#]
             [label_2, "1 + label $a | break $a", r#"Pipe(Some("a"), BinOp(Add, Literal(Number(1)), Dot), Break("a"))"#]
 
-            [ua_add, ".x += 1", r#"UpdateAssign(Index(Dot, Some(Ident("x"))), BinOp(Add, Dot, Literal(Number(1))))"#]
+            [ua_add, ".x += 1", r#"UpdateAssign(Index(Dot, Ident("x")), BinOp(Add, Dot, Literal(Number(1))))"#]
 
             [numeric_add,"123e-3 + 3","BinOp(Add, Literal(Number(123e-3)), Literal(Number(3)))"]
             [plain_call, "length", "Call(\"length\", [])"]
@@ -640,9 +640,9 @@ mod test_parser {
             [var_scope, "(3 as $a | $a) | $a", r#"Pipe(None, Scope(BindVars(Literal(Number(3)), Variable("a"), Variable("a"))), Variable("a"))"#]
             [call_with_args, "sub(1;2;3)", r#"Call("sub", [Literal(Number(1)), Literal(Number(2)), Literal(Number(3))])"#]
             [if_else, "if . then 3 elif 3<4 then 4 else 1 end", "IfElse(Dot, Literal(Number(3)), IfElse(BinOp(Less, Literal(Number(3)), Literal(Number(4))), Literal(Number(4)), Literal(Number(1))))"]
-            [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
-            [foreach, "foreach .[] as $i (0; .+$i; .*2)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), BinOp(Mul, Dot, Literal(Number(2))))"#]
-            [foreach2, "foreach .[] as $i (0; .+$i)", r#"ForEach(Index(Dot, None), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), Dot)"#]
+            [reduce, "reduce .[] as $i (0; . + $i)", r#"Reduce(Iterate(Dot), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")))"#]
+            [foreach, "foreach .[] as $i (0; .+$i; .*2)", r#"ForEach(Iterate(Dot), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), BinOp(Mul, Dot, Literal(Number(2))))"#]
+            [foreach2, "foreach .[] as $i (0; .+$i)", r#"ForEach(Iterate(Dot), "i", Literal(Number(0)), BinOp(Add, Dot, Variable("i")), Dot)"#]
             [string_int, r#" "hej \(1+2)" "#, r#"StringInterp([Literal(String("hej ")), BinOp(Add, Literal(Number(1)), Literal(Number(2)))])"#]
 
             [string_escape, r#""-\n\t\u00c4-""#, "Literal(String(\"-\\n\\tÄ-\"))"]

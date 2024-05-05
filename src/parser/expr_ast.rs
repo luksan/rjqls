@@ -277,7 +277,8 @@ mk_expr_enum! {
     Ident(String),
     // if (cond 0) then (true branch 1) else (false branch 2) end
     IfElse(Ast, Ast, Ast),
-    Index(Ast, Option<Ast>), // [2]
+    Index(Ast, Ast), // .[key] or .key
+    Iterate(Ast), // .[]
     Literal(Value),
     Object(Vec<ObjectEntry>),
     Pipe(Option<BreakLabel>, Ast, Ast),
@@ -318,7 +319,8 @@ impl Expr {
             }
             Expr::Ident(i) => visitor.visit_ident(i),
             Expr::IfElse(cond, then, else_) => visitor.visit_if_else(cond, then, else_),
-            Expr::Index(expr, idx) => visitor.visit_index(expr, idx.as_ref()),
+            Expr::Index(expr, idx) => visitor.visit_index(expr, idx),
+            Expr::Iterate(expr) => visitor.visit_iterate(expr),
             Expr::Literal(lit) => visitor.visit_literal(lit),
             Expr::Object(members) => visitor.visit_object(members),
             Expr::Pipe(label, lhs, rhs) => visitor.visit_pipe(label.as_ref(), lhs, rhs),
@@ -409,9 +411,13 @@ pub trait ExprVisitor<'e, R> {
         else_.accept(self);
         self.default()
     }
-    fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> R {
+    fn visit_index(&self, expr: &'e AstNode, idx: &'e AstNode) -> R {
         expr.accept(self);
-        idx.map(|idx| idx.accept(self));
+        idx.accept(self);
+        self.default()
+    }
+    fn visit_iterate(&self, expr: &'e AstNode) -> R {
+        expr.accept(self);
         self.default()
     }
     fn visit_literal(&self, lit: &'e Value) -> R {

@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use crate::interpreter::bind_var_pattern::BindVars;
 use crate::interpreter::BoundFunc;
 use crate::interpreter::func_scope::FuncScope;
-use crate::interpreter::generator::{Generator, ResVal};
+use crate::interpreter::generator::{Generator, GenGen, ResVal};
 use crate::parser::expr_ast::{Ast, AstNode, BinOps, BreakLabel, ExprVisitor, FuncDef, ObjectEntry};
 use crate::value::{Map, Value, ValueOps};
 
@@ -364,18 +364,10 @@ where
     }
 
     // array or object index
-    fn visit_index(&self, expr: &'e AstNode, idx: Option<&'e AstNode>) -> EvalVisitorRet<'e> {
+    fn visit_index(&self, expr: &'e AstNode, idx: &'e AstNode) -> EvalVisitorRet<'e> {
         let e = expr
             .accept(self)
             .map(|r| r.with_context(|| format!("Eval of expr for indexing failed {expr:?}")));
-        let Some(idx) = idx else {
-            // iterate all values
-            let mut ret = Vec::new();
-            for v in e {
-                ret.extend(v?.iterate()?.cloned().map(Ok));
-            }
-            return ret.into();
-        };
         let mut ret = Vec::new();
         for v in e {
             let v = &v?;
@@ -390,6 +382,16 @@ where
             }
         }
         ret.into()
+    }
+
+    fn visit_iterate(&self, expr: &'e AstNode) -> EvalVisitorRet<'e> {
+        // iterate all values
+        let gen = GenGen::new(expr.accept(self), |vals| {
+            vals.next()
+                .map(|res| Generator::from_iter(res?.iterate()?.map(Ok)))
+        });
+
+        Generator::from_iter(gen)
     }
 
     fn visit_literal(&self, lit: &Value) -> EvalVisitorRet<'e> {

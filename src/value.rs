@@ -28,7 +28,7 @@ pub trait ValueOps: Sized {
     fn is_truthy(&self) -> bool;
     fn less_than(&self, other: &Self) -> Self;
     fn index(&self, index: &Self) -> Result<Self>;
-    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Self> + '_>>;
+    fn iterate(&self) -> Result<Box<dyn Iterator<Item = Self> + 'static>>;
 
     fn length(&self) -> Result<Self>;
 }
@@ -627,10 +627,49 @@ impl ValueOps for ArcValue {
         )
     }
 
-    fn iterate(&self) -> Result<Box<dyn Iterator<Item = &Self> + '_>> {
+    fn iterate(&self) -> Result<Box<dyn Iterator<Item = Self> + 'static>> {
+        struct ArrayIter {
+            arr: ArcArray,
+            pos: usize,
+        }
+        impl Iterator for ArrayIter {
+            type Item = ArcValue;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.pos >= self.arr.0.len() {
+                    return None
+                }
+                let p = self.pos;
+                self.pos += 1;
+                Some(self.arr.0[p].clone())
+            }
+        }
+
+        struct ObjIter {
+            obj: ArcObj,
+            pos: usize,
+        }
+        impl Iterator for ObjIter {
+            type Item = ArcValue;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.pos >= self.obj.0.len() {
+                    return None
+                }
+                let p = self.pos;
+                self.pos += 1;
+                Some(self.obj.0[p].clone())
+            }
+        }
         match self {
-            Self::Array(v) => Ok(Box::new(v.iter())),
-            Self::Object(o) => Ok(Box::new(o.0.iter().map(|(_k, v)| v))),
+            Self::Array(v) => Ok(Box::new(ArrayIter {
+                arr: v.clone(),
+                pos: 0,
+            })),
+            Self::Object(o) => Ok(Box::new(ObjIter {
+                obj: o.clone(),
+                pos: 0,
+            })),
             _ => bail!("Can't iterate over {self:?}."),
         }
     }

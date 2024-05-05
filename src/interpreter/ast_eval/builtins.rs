@@ -23,7 +23,7 @@ where
             ("add", 0) => {
                 let mut sum: Value = ().into();
                 for v in self.input().iterate()? {
-                    sum = sum.add(v)?;
+                    sum = sum.add(&v)?;
                 }
                 sum.into()
             }
