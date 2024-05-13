@@ -227,7 +227,7 @@ macro_rules! tup_des {
     }};
 }
 macro_rules! mk_expr_enum {
-    ($($mem:ident$(($($t:ty),+$( as $always_empty:ident)?))?,)+) => {
+    ($($(#[$doc:meta])?$mem:ident$(($($t:ty),+$( as $always_empty:ident)?))?,)+) => {
 
         #[derive(Debug, PartialEq)]
         pub enum Expr {
@@ -243,6 +243,7 @@ macro_rules! mk_expr_enum {
             $(
             paste!{
                 #[allow(unused_parens)]
+                $(#[$doc])?
                 pub fn [<ref_ $mem:snake>](&self) -> ($($(&$t),+)?) {
                     tup_des!(&*self.expr, Expr::$mem, $($(&$t),+)?)
                 }
@@ -275,14 +276,17 @@ mk_expr_enum! {
     ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
     FuncScope(Vec<FuncDef>, Ast),
     Ident(String),
-    // if (cond 0) then (true branch 1) else (false branch 2) end
+    /// if (cond 0) then (true branch 1) else (false branch 2) end
     IfElse(Ast, Ast, Ast),
+    /// (expr to index, index key)
     Index(Ast, Ast), // .[key] or .key
     Iterate(Ast), // .[]
     Literal(Value),
     Object(Vec<ObjectEntry>),
+    /// (optional break label, lhs, rhs)
     Pipe(Option<BreakLabel>, Ast, Ast),
-    Reduce(Ast, String, Ast, Ast), // inputs, variable name, init, update
+    /// inputs, variable name, init, update
+    Reduce(Ast, String, Ast, Ast),
     Scope(Ast),
     Slice(Ast, Option<Ast>, Option<Ast>),
     StringInterp(ExprArray),
