@@ -231,7 +231,10 @@ macro_rules! mk_expr_enum {
 
         #[derive(Debug, PartialEq)]
         pub enum Expr {
-            $($mem$(($($t),+))?,)+
+            $(
+                $(#[$doc])?
+                $mem$(($($t),+))?,
+            )+
         }
 
         impl AstLoc {
@@ -273,7 +276,8 @@ mk_expr_enum! {
     Call(String, ExprArray),
     Comma(Ast, Ast),
     Dot,
-    ForEach(Ast, String, Ast, Ast, Ast), // input exp, var name, init, update, extract
+    /// input exp, var name, init, update, extract
+    ForEach(Ast, String, Ast, Ast, Ast),
     FuncScope(Vec<FuncDef>, Ast),
     Ident(String),
     /// if (cond 0) then (true branch 1) else (false branch 2) end
