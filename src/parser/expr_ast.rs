@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
@@ -226,6 +227,18 @@ macro_rules! tup_des {
         (a, b, c, d, e)
     }};
 }
+
+#[derive(Copy, Clone)]
+pub struct NodeRef<'e, K>(&'e AstLoc, PhantomData<K>);
+impl<'e, K> NodeRef<'e, K> {
+    pub fn as_expr(&self) -> &'e Expr {
+        &*self.0.expr
+    }
+    pub fn as_ast(&self) -> &'e AstLoc {
+        self.0
+    }
+}
+
 macro_rules! mk_expr_enum {
     ($($(#[$doc:meta])?$mem:ident$(($($t:ty),+$( as $always_empty:ident)?))?,)+) => {
 
@@ -236,31 +249,36 @@ macro_rules! mk_expr_enum {
                 $mem$(($($t),+))?,
             )+
         }
+        $(paste!{
+            pub struct $mem;
+            impl<'e> NodeRef<'e, $mem> {
+                #[allow(unused_parens)]
+                $(#[$doc])?
+                pub fn [<ref_ $mem:snake>](&self) -> ($($(&$t),+)?) {
+                    tup_des!(&*self.0.expr, Expr::$mem, $($(&$t),+)?)
+                }
+            }
+        })+
 
         impl AstLoc {
             pub fn walk_ast<'e, R>(&'e self, walker: &(impl AstWalker<'e, R> + ?Sized)) -> R {
                 match &*self.expr {
-                    $(Expr::$mem$((..$($always_empty)?))? => paste! { walker.[<visit_ $mem:snake>](self) } ,)+
+                    $(Expr::$mem$((..$($always_empty)?))? =>
+                        paste! {
+                            walker.[<visit_ $mem:snake>](NodeRef(&self, PhantomData))
+                        }
+                    ,)+
                 }
             }
-            $(
-            paste!{
-                #[allow(unused_parens)]
-                $(#[$doc])?
-                pub fn [<ref_ $mem:snake>](&self) -> ($($(&$t),+)?) {
-                    tup_des!(&*self.expr, Expr::$mem, $($(&$t),+)?)
-                }
-            }
-            )+
         }
 
         pub trait AstWalker<'e, R> {
             fn default(&self, node: &'e Ast) -> R;
-            $(
-            paste!{fn [<visit_ $mem:snake>](&self, node: &'e Ast) -> R {
-                self.default(node)
-            }}
-            )+
+            $(paste!{
+                fn [<visit_ $mem:snake>](&self, node: NodeRef<'e, $mem>) -> R {
+                    self.default(node.as_ast())
+                }
+            })+
         }
     };
 }
