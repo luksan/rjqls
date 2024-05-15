@@ -240,7 +240,7 @@ impl<'e, K> NodeRef<'e, K> {
 }
 
 macro_rules! mk_expr_enum {
-    ($($(#[$doc:meta])?$mem:ident$(($($t:ty),+$( as $always_empty:ident)?))?,)+) => {
+    ($($(#[$doc:meta])?$mem:ident$(($($param:ident : $t:ty),+$( as $always_empty:ident)?))?,)+) => {
 
         #[derive(Debug, PartialEq)]
         pub enum Expr {
@@ -284,37 +284,37 @@ macro_rules! mk_expr_enum {
 }
 
 mk_expr_enum! {
-    Alternative(Ast, Ast),
-    Array(ExprArray),
-    Assign(Ast, Ast),
-    BindVars(Ast, Ast, Ast),
-    BinOp(BinOps, Ast, Ast),
-    Break(BreakLabel),
-    Breakpoint(Ast),
-    Call(String, ExprArray),
-    Comma(Ast, Ast),
+    Alternative(main: Ast, alt: Ast),
+    Array(expr_arr: ExprArray),
+    Assign(lhs: Ast, rhs: Ast),
+    BindVars(vals: Ast, vars: Ast, rhs: Ast),
+    BinOp(binop: BinOps, lhs: Ast, rhs: Ast),
+    Break(break_label: BreakLabel),
+    Breakpoint(inner_ast: Ast),
+    Call(name: String, args: ExprArray),
+    Comma(lhs: Ast, rhs: Ast),
     Dot,
     /// input exp, var name, init, update, extract
-    ForEach(Ast, String, Ast, Ast, Ast),
-    FuncScope(Vec<FuncDef>, Ast),
-    Ident(String),
+    ForEach(expr: Ast, var: String, init: Ast, update: Ast, extract: Ast),
+    FuncScope(funcs: Vec<FuncDef>, rhs: Ast),
+    Ident(ident: String),
     /// if (cond 0) then (true branch 1) else (false branch 2) end
-    IfElse(Ast, Ast, Ast),
+    IfElse(cond: Ast, then: Ast, else_: Ast),
     /// (expr to index, index key)
-    Index(Ast, Ast), // .[key] or .key
-    Iterate(Ast), // .[]
-    Literal(Value),
-    Object(Vec<ObjectEntry>),
+    Index(expr: Ast, idx: Ast), // .[key] or .key
+    Iterate(expr: Ast), // .[]
+    Literal(lit: Value),
+    Object(members: Vec<ObjectEntry>),
     /// (optional break label, lhs, rhs)
-    Pipe(Option<BreakLabel>, Ast, Ast),
+    Pipe(label: Option<BreakLabel>, lhs: Ast, rhs: Ast),
     /// inputs, variable name, init, update
-    Reduce(Ast, String, Ast, Ast),
-    Scope(Ast),
-    Slice(Ast, Option<Ast>, Option<Ast>),
-    StringInterp(ExprArray),
-    TryCatch(Ast, Option<Ast>),
-    UpdateAssign(Ast, Ast),
-    Variable(String),
+    Reduce(input: Ast, var: String, init: Ast, update: Ast),
+    Scope(s: Ast),
+    Slice(expr: Ast, start: Option<Ast>, end: Option<Ast>),
+    StringInterp(parts: ExprArray),
+    TryCatch(try_expr: Ast, catch_expr: Option<Ast>),
+    UpdateAssign(path: Ast, assign: Ast),
+    Variable(s: String),
 }
 
 #[derive(Debug, PartialEq)]
