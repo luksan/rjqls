@@ -65,7 +65,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_binop(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> () {
+    fn visit_bin_op(&self, op: BinOps, lhs: &Ast, rhs: &Ast) -> () {
         lhs.accept(self);
         self.puts(&format!(" {op} "));
         rhs.accept(self);
@@ -207,7 +207,7 @@ impl ExprVisitor<'_, ()> for ExprPrinter {
         rhs.accept(self);
     }
 
-    fn visit_foreach(
+    fn visit_for_each(
         &self,
         input: &'_ AstNode,
         var: &'_ str,

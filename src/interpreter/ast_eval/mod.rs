@@ -255,7 +255,7 @@ where
         ret
     }
 
-    fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> EvalVisitorRet<'e> {
+    fn visit_bin_op(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> EvalVisitorRet<'e> {
         let lhs = lhs.accept(self);
         let mut ret = Vec::new(); // TODO generator
         for l in lhs {
@@ -464,7 +464,7 @@ where
         ret
     }
 
-    fn visit_foreach(
+    fn visit_for_each(
         &self,
         input: &'e AstNode,
         var: &'e str,

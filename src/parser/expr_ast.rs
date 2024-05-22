@@ -308,8 +308,7 @@ macro_rules! mk_expr_enum {
         })+
 
         impl AstLoc {
-            /*
-            pub fn accept<'e, R>(&'e self, visitor: &(impl ExprVisitor<'e, R>+ ?Sized)) -> R {
+            pub fn walk_expr<'e, R>(&'e self, visitor: &(impl ExprVisitor<'e, R>+ ?Sized)) -> R {
                 match &*self.expr {
                     $(Expr::$mem$(($($param),+))? =>
                         paste! {
@@ -320,7 +319,7 @@ macro_rules! mk_expr_enum {
                     ,)+
                 }
             }
-            */
+
             pub fn walk_ast<'e, R>(&'e self, walker: &(impl AstWalker<'e, R> + ?Sized)) -> R {
                 match &*self.expr {
                     $(Expr::$mem$((..$($always_empty)?))? =>
@@ -345,6 +344,19 @@ macro_rules! mk_expr_enum {
             }
         }
 
+        impl Expr {
+            #[instrument(name = "A", level = "trace", skip_all)]
+            pub fn accept<'e, R>(&'e self, visitor: &(impl ExprVisitor<'e, R> + ?Sized)) -> R {
+                trace!("Visiting {self:?}");
+                match self {
+                    $(Expr::$mem$(($($param),+))? =>
+                        paste! {
+                            visitor.[<visit_ $mem:snake>]($($($param.node_arg_ref()),+)?)
+                        }
+                    ,)+
+                }
+            }
+        }
 
         pub trait AstWalkerRef<'e, R> {
             fn default(&self, node: &'e Ast) -> R;
@@ -409,50 +421,6 @@ pub struct ObjectEntry {
     pub value: Ast,
 }
 
-impl Expr {
-    #[instrument(name = "A", level = "trace", skip_all)]
-    #[allow(unused_variables)] // FIXME remove
-    pub fn accept<'e, R>(&'e self, visitor: &(impl ExprVisitor<'e, R> + ?Sized)) -> R {
-        trace!("Visiting {self:?}");
-        match self {
-            Expr::Alternative(lhs, rhs) => visitor.visit_alternative(lhs, rhs),
-            Expr::Array(r) => visitor.visit_array(r),
-            Expr::Assign(lhs, rhs) => unimplemented!(),
-            Expr::BindVars(vals, vars, rhs) => visitor.visit_bind_vars(vals, vars, rhs),
-            Expr::BinOp(op, lhs, rhs) => visitor.visit_binop(*op, lhs, rhs),
-            Expr::Break(name) => visitor.visit_break(name),
-            Expr::Breakpoint(ast) => visitor.visit_breakpoint(ast),
-            Expr::Call(name, args) => visitor.visit_call(name, args.as_slice()),
-            Expr::Comma(lhs, rhs) => visitor.visit_comma(lhs, rhs),
-            Expr::FuncScope(funcs, rhs) => visitor.visit_func_scope(funcs, rhs),
-            Expr::Dot => visitor.visit_dot(),
-            Expr::ForEach(expr, var, init, update, extract) => {
-                visitor.visit_foreach(expr, var, init, update, extract)
-            }
-            Expr::Ident(i) => visitor.visit_ident(i),
-            Expr::IfElse(cond, then, else_) => visitor.visit_if_else(cond, then, else_),
-            Expr::Index(expr, idx) => visitor.visit_index(expr, idx),
-            Expr::Iterate(expr) => visitor.visit_iterate(expr),
-            Expr::Literal(lit) => visitor.visit_literal(lit),
-            Expr::Object(members) => visitor.visit_object(members),
-            Expr::Pipe(label, lhs, rhs) => visitor.visit_pipe(label.as_ref(), lhs, rhs),
-            Expr::Reduce(input, var, init, update) => {
-                visitor.visit_reduce(input, var, init, update)
-            }
-            Expr::Scope(s) => visitor.visit_scope(s),
-            Expr::Slice(expr, start, end) => {
-                visitor.visit_slice(expr, start.as_ref(), end.as_ref())
-            }
-            Expr::StringInterp(parts) => visitor.visit_string_interp(parts.as_slice()),
-            Expr::TryCatch(try_expr, catch_expr) => {
-                visitor.visit_try_catch(try_expr, catch_expr.as_ref())
-            }
-            Expr::UpdateAssign(path, assign) => visitor.visit_update_assign(path, assign),
-            Expr::Variable(s) => visitor.visit_variable(s),
-        }
-    }
-}
-
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let prnt = ExprPrinter::format(self);
@@ -465,6 +433,12 @@ pub type AstNode = AstLoc;
 #[allow(unused_variables)]
 pub trait ExprVisitor<'e, R> {
     fn default(&self) -> R;
+
+    fn visit_assign(&self, lhs: &'e AstNode, rhs: &'e AstNode) -> R {
+        lhs.accept(self);
+        rhs.accept(self);
+        self.default()
+    }
 
     fn visit_alternative(&self, lhs: &'e AstNode, defaults: &'e AstNode) -> R {
         lhs.accept(self);
@@ -484,7 +458,7 @@ pub trait ExprVisitor<'e, R> {
         self.default()
     }
 
-    fn visit_binop(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> R {
+    fn visit_bin_op(&self, op: BinOps, lhs: &'e Ast, rhs: &'e Ast) -> R {
         lhs.accept(self);
         rhs.accept(self);
         self.default()
@@ -547,7 +521,7 @@ pub trait ExprVisitor<'e, R> {
         rhs.accept(self);
         self.default()
     }
-    fn visit_foreach(
+    fn visit_for_each(
         &self,
         input: &'e AstNode,
         var: &'e str,
