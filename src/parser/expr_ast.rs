@@ -239,6 +239,53 @@ impl<'e, K> NodeRef<'e, K> {
     }
 }
 
+pub trait NodeRefArg {
+    type Ret;
+    fn node_arg_ref(self) -> Self::Ret;
+}
+
+macro_rules! node_ref_arg_self {
+    ($($typ:ty),+) => {
+        $(
+        impl<'e> NodeRefArg for &'e $typ {
+            type Ret = &'e $typ;
+            fn node_arg_ref(self) -> Self::Ret {
+                self
+            }
+        }
+        )+
+    };
+}
+node_ref_arg_self!(AstLoc, BreakLabel, FuncDef, Value);
+
+impl<'e> NodeRefArg for &'e String {
+    type Ret = &'e str;
+    fn node_arg_ref(self) -> Self::Ret {
+        self.as_ref()
+    }
+}
+
+impl<'e> NodeRefArg for &'e BinOps {
+    type Ret = BinOps;
+    fn node_arg_ref(self) -> Self::Ret {
+        *self
+    }
+}
+
+impl<'e, T> NodeRefArg for &'e Option<T> {
+    type Ret = Option<&'e T>;
+    fn node_arg_ref(self) -> Self::Ret {
+        self.as_ref()
+    }
+}
+
+impl<'e, T> NodeRefArg for &'e Vec<T> {
+    type Ret = &'e [T];
+    fn node_arg_ref(self) -> Self::Ret {
+        self.as_slice()
+    }
+}
+
 macro_rules! mk_expr_enum {
     ($($(#[$doc:meta])?$mem:ident$(($($param:ident : $t:ty),+$( as $always_empty:ident)?))?,)+) => {
 
@@ -261,6 +308,19 @@ macro_rules! mk_expr_enum {
         })+
 
         impl AstLoc {
+            /*
+            pub fn accept<'e, R>(&'e self, visitor: &(impl ExprVisitor<'e, R>+ ?Sized)) -> R {
+                match &*self.expr {
+                    $(Expr::$mem$(($($param),+))? =>
+                        paste! {
+                            visitor.[<visit_ $mem:snake>](
+                                $($($param.node_arg_ref()),+)?
+                            )
+                        }
+                    ,)+
+                }
+            }
+            */
             pub fn walk_ast<'e, R>(&'e self, walker: &(impl AstWalker<'e, R> + ?Sized)) -> R {
                 match &*self.expr {
                     $(Expr::$mem$((..$($always_empty)?))? =>
@@ -270,6 +330,32 @@ macro_rules! mk_expr_enum {
                     ,)+
                 }
             }
+
+            pub fn walk_ast_refs<'e, R>(&'e self, walker: &(impl AstWalkerRef<'e, R> + ?Sized)) -> R {
+                match &*self.expr {
+                    $(Expr::$mem$(($($param),+))? =>
+                        paste! {
+                            walker.[<visit_ $mem:snake>](
+                                NodeRef(&self, PhantomData)
+                                $(,$($param.node_arg_ref()),+)?
+                            )
+                        }
+                    ,)+
+                }
+            }
+        }
+
+
+        pub trait AstWalkerRef<'e, R> {
+            fn default(&self, node: &'e Ast) -> R;
+            $(paste!{
+                #[allow(unused_variables)]
+                fn [<visit_ $mem:snake>](&self, node: NodeRef<'e, $mem>
+                  $(,$($param: <&'e $t as NodeRefArg>::Ret),+)?
+                ) -> R {
+                    self.default(node.as_ast())
+                }
+            })+
         }
 
         pub trait AstWalker<'e, R> {
